@@ -1,56 +1,21 @@
 // project_manager.js
 // Author: CCVO
-// Purpose: Browser-side ProjectManager for GodotGameAssembler
-// Combines ProjectGraph, SceneComposer, AssetHandler, and ZIP export
-
-// ------------------------------
-// AssetHandler
-// ------------------------------
-class AssetHandler {
-    constructor() {
-        this.assets = {}; // key=assetPath, value={type, data, original_name}
-    }
-
-    addAsset(assetPath, assetType, assetData) {
-        if (this.assets[assetPath]) {
-            console.warn(`Asset '${assetPath}' already exists.`);
-            return false;
-        }
-        this.assets[assetPath] = {
-            type: assetType,
-            data: assetData,
-            original_name: assetPath.split("/").pop()
-        };
-        return true;
-    }
-
-    getAsset(assetPath) {
-        return this.assets[assetPath] || null;
-    }
-
-    listAssets() {
-        return Object.keys(this.assets);
-    }
-
-    // Exports assets into a JSZip instance
-    exportAssets(zipFolderPath, zipInstance) {
-        for (const assetPath in this.assets) {
-            const fullPath = `${zipFolderPath}/${assetPath}`;
-            zipInstance.file(fullPath, this.assets[assetPath].data);
-        }
-    }
-}
+// Purpose: Browser-side ProjectManager for GodotGameAssembler with NLP conversation
+// Combines ProjectGraph, SceneComposer, AssetHandler, ZipExporter, and conversational NLP
 
 // ------------------------------
 // ProjectGraph
 // ------------------------------
 class ProjectGraph {
     constructor() {
-        this.scenes = {}; // sceneName -> { nodes, scripts, root_node_type }
-        this.assets = {}; // assetPath -> { type, data, original_name }
+        this.scenes = {}; // scene_name -> { nodes, scripts, root_node_type }
+        this.assets = {}; // asset_path -> { type, data, original_name }
+        this.tasks = [];  // For NLP task planning
     }
 
-    // Scene API
+    // ------------------------------
+    // Scene Management
+    // ------------------------------
     addScene(sceneName) {
         if (this.scenes[sceneName]) {
             console.warn(`Scene '${sceneName}' already exists.`);
@@ -89,18 +54,42 @@ class ProjectGraph {
         return true;
     }
 
-    // Asset API (optional duplicate for GUI convenience)
+    // ------------------------------
+    // Asset Management
+    // ------------------------------
     addAsset(assetPath, assetType, assetData) {
         if (this.assets[assetPath]) {
-            console.warn(`Asset '${assetPath}' already exists in ProjectGraph.`);
+            console.warn(`Asset '${assetPath}' already exists.`);
             return false;
         }
         this.assets[assetPath] = { type: assetType, data: assetData, original_name: assetPath.split("/").pop() };
         return true;
     }
 
+    getAsset(assetPath) {
+        return this.assets[assetPath] || null;
+    }
+
     listAssets() {
         return Object.keys(this.assets);
+    }
+
+    // ------------------------------
+    // Task Planning for NLP
+    // ------------------------------
+    addTask(taskDescription) {
+        this.tasks.push({ description: taskDescription, done: false });
+        return true;
+    }
+
+    listTasks() {
+        return this.tasks.map((t, i) => `${i + 1}. [${t.done ? "x" : " "}] ${t.description}`);
+    }
+
+    completeTask(index) {
+        if (index < 0 || index >= this.tasks.length) return false;
+        this.tasks[index].done = true;
+        return true;
     }
 }
 
@@ -124,7 +113,6 @@ class SceneComposer {
     _generateSceneFile(sceneName, sceneData) {
         let text = `[gd_scene load_steps=2 format=2]\n`;
         text += `[node name="${sceneName}" type="${sceneData.root_node_type}"]\n`;
-
         for (const nodeName in sceneData.nodes) {
             const node = sceneData.nodes[nodeName];
             text += `[node name="${nodeName}" type="${node.type}" parent="${node.parent}"]\n`;
@@ -148,6 +136,30 @@ class SceneComposer {
 }
 
 // ------------------------------
+// AssetHandler
+// ------------------------------
+class AssetHandler {
+    constructor(projectGraph) {
+        this.projectGraph = projectGraph;
+    }
+
+    addAsset(path, type, data) {
+        return this.projectGraph.addAsset(path, type, data);
+    }
+
+    listAssets() {
+        return this.projectGraph.listAssets();
+    }
+
+    exportAssets(basePath, zipInstance) {
+        for (const assetPath of this.listAssets()) {
+            const asset = this.projectGraph.getAsset(assetPath);
+            zipInstance.file(`${basePath}/${assetPath}`, asset.data);
+        }
+    }
+}
+
+// ------------------------------
 // ZipExporter
 // ------------------------------
 class ZipExporter {
@@ -164,7 +176,6 @@ class ZipExporter {
         const scenes = this.sceneComposer.composeAllScenes();
         for (const sceneName in scenes) {
             zip.file(`${projectName}/${sceneName}.tscn`, scenes[sceneName]);
-
             const sceneData = this.projectGraph.getScene(sceneName);
             for (const scriptName in sceneData.scripts) {
                 zip.file(`${projectName}/scripts/${scriptName}.gd`, sceneData.scripts[scriptName]);
@@ -183,40 +194,81 @@ class ZipExporter {
 }
 
 // ------------------------------
-// Global ProjectManager Singleton
+// NLP Engine
+// ------------------------------
+class NLP {
+    constructor(projectGraph) {
+        this.projectGraph = projectGraph;
+        this.history = [];
+    }
+
+    process(input) {
+        const text = input.trim();
+        this.history.push(text);
+
+        // Simple command-based interpretation
+        if (/^hello$/i.test(text)) return "Hello! How’s our project going?";
+        if (/project status/i.test(text)) return this._projectStatus();
+        if (/tasks/i.test(text)) return this.projectGraph.listTasks().join("\n") || "No tasks defined.";
+        if (/plan task (.+)/i.test(text)) {
+            const task = text.match(/plan task (.+)/i)[1];
+            this.projectGraph.addTask(task);
+            return `Task added: ${task}`;
+        }
+        if (/complete task (\d+)/i.test(text)) {
+            const idx = parseInt(text.match(/complete task (\d+)/i)[1], 10) - 1;
+            const success = this.projectGraph.completeTask(idx);
+            return success ? `Task ${idx+1} marked as done.` : `Task index invalid.`;
+        }
+
+        return `Sorry, I didn't understand that.`;
+    }
+
+    _projectStatus() {
+        const scenes = Object.keys(this.projectGraph.scenes).length;
+        const nodes = Object.values(this.projectGraph.scenes).reduce((acc, s) => acc + Object.keys(s.nodes).length, 0);
+        const assets = Object.keys(this.projectGraph.assets).length;
+        return `Project has ${scenes} scene(s), ${nodes} node(s), and ${assets} asset(s).`;
+    }
+}
+
+// ------------------------------
+// Global ProjectManager
 // ------------------------------
 const ProjectManager = {
     projectGraph: new ProjectGraph(),
-    assetHandler: new AssetHandler(),
     sceneComposer: null,
+    assetHandler: null,
     zipExporter: null,
+    nlp: null,
 
     init() {
         this.sceneComposer = new SceneComposer(this.projectGraph);
+        this.assetHandler = new AssetHandler(this.projectGraph);
         this.zipExporter = new ZipExporter(this.projectGraph, this.sceneComposer, this.assetHandler);
+        this.nlp = new NLP(this.projectGraph);
     },
 
-    // --- Scene API ---
+    // Scene API
     add_scene(name) { return this.projectGraph.addScene(name); },
     add_node(scene, node, type, parent) { return this.projectGraph.addNode(scene, node, type, parent); },
     add_script(scene, scriptName, code) { return this.projectGraph.addScript(scene, scriptName, code); },
-    attach_script(scene, node, scriptName) { return this.projectGraph.attachScriptToNode(scene, node, scriptName); },
+    attach_script(scene, node, script) { return this.projectGraph.attachScriptToNode(scene, node, script); },
 
-    // --- Asset API ---
+    // Asset API
     upload_asset(path, type, data) { return this.assetHandler.addAsset(path, type, data); },
     list_assets() { return this.assetHandler.listAssets(); },
 
-    // --- Export API ---
-    async generate_project(projectName) { return await this.zipExporter.generateZip(projectName); },
+    // Export API
+    async generate_project(name) { return await this.zipExporter.generateZip(name); },
 
-    // --- NLP placeholder ---
-    process_nlp_command(cmd) { return `Processed command: ${cmd}`; },
+    // NLP
+    process_nlp_command(cmd) { return this.nlp.process(cmd); },
 
-    // Debug helpers
     get_scenes() { return this.projectGraph.scenes; },
     get_scene_file(name) { return this.sceneComposer._generateSceneFile(name, this.projectGraph.getScene(name)); }
 };
 
-// Initialize singleton
+// Initialize and expose globally
 ProjectManager.init();
 window.ProjectManager = ProjectManager;
