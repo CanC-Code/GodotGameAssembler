@@ -1,91 +1,191 @@
-// ProjectManager JS Replacement for project_manager.gd
+// project_manager.js
+// Author: CCVO
+// Purpose: Browser-side ProjectManager for GodotGameAssembler
+// Combines ProjectGraph, SceneComposer, and AssetHandler
+
+class ProjectGraph {
+    constructor() {
+        this.scenes = {}; // scene_name -> { nodes, scripts, root_node_type }
+        this.assets = {}; // asset_path -> { type, data, original_name }
+    }
+
+    // ------------------------------
+    // Scene Management
+    // ------------------------------
+
+    addScene(sceneName) {
+        if (this.scenes[sceneName]) {
+            console.warn(`Scene '${sceneName}' already exists.`);
+            return false;
+        }
+        this.scenes[sceneName] = { nodes: {}, scripts: {}, root_node_type: "Node2D" };
+        return true;
+    }
+
+    getScene(sceneName) {
+        return this.scenes[sceneName] || null;
+    }
+
+    addNode(sceneName, nodeName, nodeType = "Node2D", parentName = "") {
+        const scene = this.getScene(sceneName);
+        if (!scene) return false;
+        if (scene.nodes[nodeName]) {
+            console.warn(`Node '${nodeName}' already exists in scene '${sceneName}'.`);
+            return false;
+        }
+        scene.nodes[nodeName] = { type: nodeType, parent: parentName, properties: {}, scripts: [] };
+        return true;
+    }
+
+    attachScriptToNode(sceneName, nodeName, scriptName) {
+        const scene = this.getScene(sceneName);
+        if (!scene || !scene.nodes[nodeName]) return false;
+        scene.nodes[nodeName].scripts.push(scriptName);
+        return true;
+    }
+
+    addScript(sceneName, scriptName, scriptCode) {
+        const scene = this.getScene(sceneName);
+        if (!scene) return false;
+        scene.scripts[scriptName] = scriptCode;
+        return true;
+    }
+
+    // ------------------------------
+    // Asset Management
+    // ------------------------------
+
+    addAsset(assetPath, assetType, assetData) {
+        if (this.assets[assetPath]) {
+            console.warn(`Asset '${assetPath}' already exists.`);
+            return false;
+        }
+        this.assets[assetPath] = { type: assetType, data: assetData, original_name: assetPath.split("/").pop() };
+        return true;
+    }
+
+    getAsset(assetPath) {
+        return this.assets[assetPath] || null;
+    }
+
+    listAssets() {
+        return Object.keys(this.assets);
+    }
+}
+
+class SceneComposer {
+    constructor(projectGraph) {
+        this.projectGraph = projectGraph;
+    }
+
+    composeAllScenes() {
+        const output = {};
+        for (const sceneName in this.projectGraph.scenes) {
+            const sceneData = this.projectGraph.scenes[sceneName];
+            output[sceneName] = this._generateSceneFile(sceneName, sceneData);
+        }
+        return output;
+    }
+
+    _generateSceneFile(sceneName, sceneData) {
+        let text = `[gd_scene load_steps=2 format=2]\n`;
+        text += `[node name="${sceneName}" type="${sceneData.root_node_type}"]\n`;
+
+        for (const nodeName in sceneData.nodes) {
+            const node = sceneData.nodes[nodeName];
+            text += `[node name="${nodeName}" type="${node.type}" parent="${node.parent}"]\n`;
+            for (const prop in node.properties) {
+                text += `${prop} = ${this._valueToString(node.properties[prop])}\n`;
+            }
+            for (const scriptName of node.scripts) {
+                text += `script = ExtResource( ${scriptName} )\n`;
+            }
+        }
+        return text;
+    }
+
+    _valueToString(value) {
+        if (typeof value === "string") return `"${value}"`;
+        if (Array.isArray(value) && value.length === 2) return `Vector2(${value[0]}, ${value[1]})`;
+        if (Array.isArray(value) && value.length === 3) return `Vector3(${value[0]}, ${value[1]}, ${value[2]})`;
+        if (typeof value === "boolean") return value ? "true" : "false";
+        return value.toString();
+    }
+}
+
+class ZipExporter {
+    constructor(projectGraph, sceneComposer, assetHandler) {
+        this.projectGraph = projectGraph;
+        this.sceneComposer = sceneComposer;
+        this.assetHandler = assetHandler;
+    }
+
+    async generateZip(projectName) {
+        const zip = new JSZip();
+
+        // --- Scenes & Scripts ---
+        const scenes = this.sceneComposer.composeAllScenes();
+        for (const sceneName in scenes) {
+            zip.file(`${projectName}/${sceneName}.tscn`, scenes[sceneName]);
+
+            const sceneData = this.projectGraph.getScene(sceneName);
+            for (const scriptName in sceneData.scripts) {
+                zip.file(`${projectName}/scripts/${scriptName}.gd`, sceneData.scripts[scriptName]);
+            }
+        }
+
+        // --- Assets ---
+        this.assetHandler.exportAssets(`${projectName}/assets`, zip);
+
+        // --- Made-by Slide ---
+        const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
+        zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
+
+        const content = await zip.generateAsync({ type: "blob" });
+        return content;
+    }
+}
+
+// ------------------------------
+// Global Singleton
+// ------------------------------
+
 const ProjectManager = {
-  scenes: {},
-  assets: {},
+    projectGraph: new ProjectGraph(),
+    assetHandler: new AssetHandler(),
+    sceneComposer: null,
+    zipExporter: null,
 
-  // Add a new scene
-  add_scene(name) {
-    if (!name) return "Scene name required.";
-    if (this.scenes[name]) return `Scene '${name}' already exists.`;
-    this.scenes[name] = { nodes: {}, scripts: {} };
-    return `Scene '${name}' added.`;
-  },
+    init() {
+        this.sceneComposer = new SceneComposer(this.projectGraph);
+        this.zipExporter = new ZipExporter(this.projectGraph, this.sceneComposer, this.assetHandler);
+    },
 
-  // Add a new node to a scene
-  add_node(sceneName, nodeName, type, parent = "") {
-    const scene = this.scenes[sceneName];
-    if (!scene) return `Scene '${sceneName}' does not exist.`;
-    if (!nodeName) return "Node name required.";
-    if (scene.nodes[nodeName]) return `Node '${nodeName}' already exists in scene '${sceneName}'.`;
-    scene.nodes[nodeName] = { type, parent, scripts: {} };
-    return `Node '${nodeName}' of type '${type}' added to scene '${sceneName}'.`;
-  },
+    // --- Scene API ---
+    add_scene(name) { return this.projectGraph.addScene(name); },
+    add_node(scene, node, type, parent) { return this.projectGraph.addNode(scene, node, type, parent); },
+    add_script(scene, scriptName, code) { return this.projectGraph.addScript(scene, scriptName, code); },
 
-  // Upload an asset (Uint8Array)
-  upload_asset(name, type, data) {
-    if (!name || !type || !data) return "Invalid asset upload.";
-    this.assets[name] = { type, data };
-    return `Asset '${name}' uploaded as ${type}.`;
-  },
+    // --- Node API ---
+    attach_script(scene, node, script) { return this.projectGraph.attachScriptToNode(scene, node, script); },
 
-  // Return all scenes
-  get_scenes() {
-    return this.scenes;
-  },
+    // --- Asset API ---
+    upload_asset(path, type, data) { return this.assetHandler.addAsset(path, type, data); },
+    list_assets() { return this.projectGraph.listAssets(); },
 
-  // Return all assets
-  list_assets() {
-    return this.assets;
-  },
+    // --- Export API ---
+    async generate_project(projectName) { return await this.zipExporter.generateZip(projectName); },
 
-  // Get a text version of a scene (simulate .tscn)
-  get_scene_file(sceneName) {
-    const scene = this.scenes[sceneName];
-    if (!scene) return null;
-    let content = `[scene name="${sceneName}"]\n`;
-    for (const nodeName in scene.nodes) {
-      const node = scene.nodes[nodeName];
-      content += `[node name="${nodeName}" type="${node.type}" parent="${node.parent}"]\n`;
-    }
-    return content;
-  },
+    // --- NLP placeholder ---
+    process_nlp_command(cmd) {
+        // Example: just echo for now
+        return `Processed command: ${cmd}`;
+    },
 
-  // Process NLP commands (placeholder)
-  process_nlp_command(cmd) {
-    // Very basic simulation for now
-    appendNLP(`[NLP] You typed: ${cmd}`);
-    return `[NLP] Processed command: ${cmd}`;
-  },
-
-  // Generate project ZIP
-  async generate_project_zip(projectName) {
-    const zip = new JSZip();
-    projectName = projectName || "GodotProject";
-
-    // Scenes & scripts
-    for (const sceneName in this.scenes) {
-      const scene = this.scenes[sceneName];
-      const tscnContent = this.get_scene_file(sceneName);
-      zip.file(`${projectName}/${sceneName}.tscn`, tscnContent);
-      for (const scriptName in scene.scripts) {
-        const code = scene.scripts[scriptName];
-        zip.file(`${projectName}/scripts/${scriptName}.gd`, code);
-      }
-    }
-
-    // Assets
-    for (const assetName in this.assets) {
-      const asset = this.assets[assetName];
-      zip.file(`${projectName}/assets/${assetName}`, new Uint8Array(asset.data));
-    }
-
-    // Made-by slide
-    const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
-    zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
-
-    // Generate ZIP and trigger download
-    const content = await zip.generateAsync({ type: "blob" });
-    saveAs(content, `${projectName}.zip`);
-    appendNLP(`Project '${projectName}' ZIP generated and ready for download.`);
-  }
+    get_scenes() { return this.projectGraph.scenes; },
+    get_scene_file(name) { return this.sceneComposer._generateSceneFile(name, this.projectGraph.getScene(name)); }
 };
+
+// Initialize on load
+ProjectManager.init();
+window.ProjectManager = ProjectManager;
