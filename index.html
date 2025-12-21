@@ -8,38 +8,36 @@
 
 <body>
 
-<header>
-  Godot Game Assembler
-</header>
+<header>Godot Game Assembler</header>
 
 <div id="app-root">
 
-  <!-- TOP WORKSPACE -->
-  <div id="workspace">
+  <!-- TOP HALF -->
+  <div id="top-area">
 
-    <!-- LEFT SIDEBAR -->
-    <div id="sidebar" class="panel">
-      <div class="panel-title">Project</div>
-      <div id="project-tree" class="panel-content">
+    <!-- TOP LEFT: FILE / PROJECT VIEW -->
+    <div id="top-left" class="panel">
+      <div class="panel-title">Project / Files</div>
+      <div id="project-tree">
         <em>No scenes</em>
       </div>
     </div>
 
-    <!-- RIGHT INSPECTOR -->
-    <div id="inspector" class="panel">
-      <div class="panel-title">Inspector</div>
+    <!-- TOP RIGHT: FILE INFO + PREVIEW -->
+    <div id="top-right" class="panel">
+      <div class="panel-title">File Information</div>
       <div id="file-info">
-        <em>Select an item</em>
+        <em>No file selected</em>
       </div>
       <div id="file-preview">
-        <em>Preview area</em>
+        <em>Preview will appear here</em>
       </div>
     </div>
 
   </div>
 
-  <!-- NLP CONSOLE -->
-  <div id="nlp-console" class="panel">
+  <!-- BOTTOM HALF: NLP -->
+  <div id="bottom-area" class="panel">
     <div class="panel-title">NLP Console</div>
     <div id="nlp-log"></div>
     <div class="nlp-input-row">
