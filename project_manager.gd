@@ -1,5 +1,5 @@
 // project_manager.gd
-// Handles scenes, nodes, scripts, assets, and NLP commands with NLP_PRO integration
+// Handles scenes, nodes, scripts, assets, and NLP commands with automatic project plan execution
 
 const ProjectManager = {
   scenes: {},
@@ -61,14 +61,13 @@ const ProjectManager = {
     if(typeof NLP_PRO === "undefined") return "NLP_PRO not loaded.";
 
     try {
-      // Get structured plan from NLP
+      // 1. Get structured plan from NLP
       const plan = await NLP_PRO.process(command);
-
       if(!plan || plan.length === 0) return "Could not parse command.";
 
       let response = "";
 
-      // Execute each plan step
+      // 2. Execute each plan step
       for(let step of plan){
         switch(step.action){
           case "create_scene":
@@ -84,8 +83,11 @@ const ProjectManager = {
             response += "Use GUI to upload assets: " + step.name + "\n";
             break;
           case "generate_project":
-            await generateProjectGUI();
+            await this.generate_project_zip(step.projectName || "GodotProject");
             response += "Project ZIP generated.\n";
+            break;
+          case "add_intro_scene":
+            response += this.create_intro_scene(step.text || "Made with GodotGameAssembler by CCVO") + "\n";
             break;
           default:
             response += `Unknown action: ${step.action}\n`;
@@ -99,5 +101,52 @@ const ProjectManager = {
       console.error("NLP Error:", e);
       return "Error processing NLP command.";
     }
+  },
+
+  // --- Auto-generated Intro / Menu ---
+  create_intro_scene: function(text){
+    const sceneName = "IntroScene";
+    this.add_scene(sceneName);
+    this.add_node(sceneName, "IntroLabel", "Label");
+    const scriptContent = `extends Label\n\nfunc _ready():\n    text = "${text}"`;
+    this.add_script(sceneName, "IntroScript", scriptContent);
+    return `Intro scene '${sceneName}' created with text: "${text}"`;
+  },
+
+  // --- Project Generation ---
+  generate_project_zip: async function(projectName){
+    const status = document.getElementById("export-status");
+    status.innerText = "Generating project ZIP...";
+    appendNLP(`Generating project '${projectName}'...`);
+
+    const zip = new JSZip();
+
+    // Add scenes and scripts
+    const scenes = this.get_scenes();
+    for(const sceneName in scenes){
+      const scene = scenes[sceneName];
+      const tscnContent = this.get_scene_file(sceneName);
+      zip.file(`${projectName}/${sceneName}.tscn`, tscnContent);
+
+      for(const scriptName in scene.scripts){
+        const code = scene.scripts[scriptName];
+        zip.file(`${projectName}/scripts/${scriptName}.gd`, code);
+      }
+    }
+
+    // Add assets
+    const assets = this.list_assets();
+    for(const assetName in assets){
+      const asset = assets[assetName];
+      const buffer = new Uint8Array(asset.data);
+      zip.file(`${projectName}/assets/${assetName}`, buffer);
+    }
+
+    // Generate ZIP and trigger download
+    const content = await zip.generateAsync({ type:"blob" });
+    saveAs(content, `${projectName}.zip`);
+
+    status.innerText = `Project '${projectName}' ZIP ready for download.`;
+    appendNLP(`Project '${projectName}' generated and ready for download.`);
   }
 };
