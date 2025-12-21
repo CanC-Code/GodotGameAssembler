@@ -5,199 +5,174 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GodotGameAssembler</title>
 <style>
-  body { margin:0; font-family:sans-serif; background:#1e1e1e; color:#f0f0f0; }
-  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; }
-  #top { display:flex; height:50vh; gap:1em; padding:1em; }
-  #file-browser, #asset-preview { flex:1; background:#2b2b2b; padding:1em; border-radius:8px; overflow:auto; }
-  #bottom { height:50vh; background:#2b2b2b; padding:1em; border-radius:8px; display:flex; flex-direction:column; }
-  button,input,select,textarea { border:none; border-radius:4px; padding:0.5em; margin-top:0.5em; width:100%; }
-  #nlp-log { flex:1; overflow-y:auto; background:#1b1b1b; padding:0.5em; border-radius:4px; }
-  #nlp-input { display:flex; gap:0.5em; margin-top:0.5em; }
-  #nlp-input input { flex:1; }
-  h3 { margin-top:0; }
-  #asset-display { margin-top:1em; width:100%; height:300px; background:#1b1b1b; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:4px; }
+  body { font-family:sans-serif; margin:0; padding:0; background:#1e1e1e; color:#f0f0f0; height:100vh; display:flex; flex-direction:column; }
+  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; flex-shrink:0; }
+  #main { display:flex; flex:1; overflow:hidden; }
+  #left-panel, #right-panel { flex:1; display:flex; flex-direction:column; overflow:auto; padding:1em; gap:1em; }
+  #left-panel { background:#2b2b2b; min-width:300px; max-width:400px; }
+  #right-panel { background:#2a2a2a; flex:2; }
+  .panel { background:#3a3a3a; border-radius:8px; padding:1em; margin-bottom:1em; }
+  .tabs { display:flex; gap:1em; cursor:pointer; margin-bottom:0.5em; }
+  .tab { padding:0.5em 1em; background:#444; border-radius:4px; }
+  .tab.active { background:#666; }
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+  button { padding:0.5em 1em; border:none; border-radius:4px; cursor:pointer; margin-top:0.5em; }
+  input, select, textarea { width:100%; padding:0.5em; border-radius:4px; border:none; margin-top:0.5em; }
+  #nlp-panel { background:#1b1b1b; padding:1em; flex-shrink:0; height:180px; display:flex; flex-direction:column; }
+  #nlp-interface { overflow-y:auto; flex:1; margin-bottom:0.5em; }
 </style>
 </head>
 <body>
 <header>GodotGameAssembler</header>
 
-<div id="top">
-  <div id="file-browser">
-    <h3>Scenes & Nodes</h3>
-    <div id="scene-list"></div>
-    <h3>Scripts</h3>
-    <div id="script-list"></div>
+<div id="main">
+  <!-- Left Panel: Tabs -->
+  <div id="left-panel">
+    <div class="tabs">
+      <div class="tab active" data-tab="scene-tab">Scenes</div>
+      <div class="tab" data-tab="asset-tab">Assets</div>
+      <div class="tab" data-tab="export-tab">Export</div>
+    </div>
+
+    <div id="scene-tab" class="tab-content active panel">
+      <h3>Scenes & Nodes</h3>
+      <input type="text" id="scene-name" placeholder="Scene name">
+      <button onclick="addSceneGUI()">Add Scene</button>
+      <div id="scene-list"></div>
+      <hr>
+      <input type="text" id="node-name" placeholder="Node name">
+      <select id="node-type">
+        <option>Node2D</option>
+        <option>Sprite</option>
+        <option>Label</option>
+        <option>Control</option>
+        <option>Area2D</option>
+        <option>Camera2D</option>
+      </select>
+      <input type="text" id="parent-name" placeholder="Parent node (optional)">
+      <button onclick="addNodeGUI()">Add Node</button>
+      <div id="node-list"></div>
+    </div>
+
+    <div id="asset-tab" class="tab-content panel">
+      <h3>Assets</h3>
+      <input type="file" id="asset-upload" multiple>
+      <select id="asset-type">
+        <option value="texture">Texture</option>
+        <option value="gltf">GLTF Model</option>
+        <option value="audio">Audio</option>
+        <option value="font">Font</option>
+      </select>
+      <button onclick="uploadAssetsGUI()">Upload Asset(s)</button>
+      <ul id="asset-list"></ul>
+    </div>
+
+    <div id="export-tab" class="tab-content panel">
+      <h3>Export Project</h3>
+      <input type="text" id="project-name" placeholder="Project Name">
+      <button onclick="generateProjectGUI()">Generate & Download ZIP</button>
+      <div id="export-status"></div>
+    </div>
   </div>
 
-  <div id="asset-preview">
-    <h3>Asset Preview</h3>
-    <div id="asset-info"></div>
-    <div id="asset-display"></div>
+  <!-- Right Panel: Preview / Info -->
+  <div id="right-panel">
+    <div class="panel" id="preview-panel">
+      <h3>Preview / Info</h3>
+      <div id="preview-content">Select a scene or asset to preview details here.</div>
+    </div>
   </div>
 </div>
 
-<div id="bottom">
-  <h3>NLP Interface</h3>
-  <div id="nlp-log"></div>
-  <div id="nlp-input">
-    <input type="text" id="nlp-command" placeholder="Type command here">
-    <button onclick="sendNLPCommandGUI()">Send</button>
-  </div>
+<!-- Bottom NLP Panel -->
+<div id="nlp-panel">
+  <div id="nlp-interface"></div>
+  <input type="text" id="nlp-command" placeholder="Type command here">
+  <button onclick="sendNLPCommandGUI()">Send</button>
 </div>
 
-<script src="libs/three.min.js"></script>
+<!-- Local Libraries -->
 <script src="libs/jszip.min.js"></script>
 <script src="libs/FileSaver.min.js"></script>
 <script src="libs/nlp_pro.js"></script>
 <script src="godot.js"></script>
 <script src="project_manager.gd"></script>
+
 <script>
-  // --- Scene & Asset refresh ---
-  function refreshSceneList(){
-    const sceneList = document.getElementById("scene-list");
-    const scriptList = document.getElementById("script-list");
-    sceneList.innerHTML = "";
-    scriptList.innerHTML = "";
-    const scenes = ProjectManager.get_scenes();
-    for(const sceneName in scenes){
-      const sceneDiv = document.createElement("div");
-      sceneDiv.textContent = sceneName;
-      sceneDiv.style.cursor = "pointer";
-      sceneDiv.onclick = ()=>selectScene(sceneName);
-      sceneList.appendChild(sceneDiv);
+  // --- Tab switching ---
+  const tabs = document.querySelectorAll(".tab");
+  tabs.forEach(tab=>{
+    tab.addEventListener("click", ()=>{
+      tabs.forEach(t=>t.classList.remove("active"));
+      tab.classList.add("active");
+      const tabContents = document.querySelectorAll(".tab-content");
+      tabContents.forEach(tc=>tc.classList.remove("active"));
+      document.getElementById(tab.dataset.tab).classList.add("active");
+    });
+  });
 
-      const scripts = scenes[sceneName].scripts;
-      for(const sName in scripts){
-        const sDiv = document.createElement("div");
-        sDiv.textContent = sName;
-        sDiv.style.marginLeft="1em";
-        scriptList.appendChild(sDiv);
-      }
+  // --- GUI functions connecting to ProjectManager ---
+  function addSceneGUI() {
+    const name = document.getElementById("scene-name").value.trim();
+    if(!name) return alert("Enter scene name");
+    const res = ProjectManager.add_scene(name);
+    document.getElementById("scene-list").innerHTML += `<div>${name}</div>`;
+    appendNLP(res);
+  }
+
+  function addNodeGUI() {
+    const nodeName = document.getElementById("node-name").value.trim();
+    const nodeType = document.getElementById("node-type").value;
+    const parent = document.getElementById("parent-name").value.trim();
+    const sceneList = document.getElementById("scene-list").children;
+    if(sceneList.length === 0) return alert("Add a scene first");
+    const sceneName = sceneList[sceneList.length-1].innerText;
+    const res = ProjectManager.add_node(sceneName, nodeName, nodeType, parent);
+    document.getElementById("node-list").innerHTML += `<div>${nodeName} (${nodeType})</div>`;
+    appendNLP(res);
+  }
+
+  function uploadAssetsGUI() {
+    const files = document.getElementById("asset-upload").files;
+    const type = document.getElementById("asset-type").value;
+    const list = document.getElementById("asset-list");
+    if(files.length === 0) return alert("Select files to upload");
+
+    for(let file of files){
+      const reader = new FileReader();
+      reader.onload = (e)=>{
+        const arrayBuffer = e.target.result;
+        const uint8 = new Uint8Array(arrayBuffer);
+        ProjectManager.upload_asset(file.name, type, uint8);
+        list.innerHTML += `<li>${file.name} (${type})</li>`;
+        appendNLP(`Asset '${file.name}' uploaded as ${type}.`);
+      };
+      reader.readAsArrayBuffer(file);
     }
   }
 
-  function selectScene(sceneName){
-    const scene = ProjectManager.get_scenes()[sceneName];
-    appendNLP(`Selected scene '${sceneName}' with ${scene.nodes.length} nodes.`);
+  async function generateProjectGUI() {
+    const projectName = document.getElementById("project-name").value.trim() || "GodotProject";
+    await ProjectManager.generate_project_zip(projectName);
   }
 
-  function refreshAssetList(){
-    const assetList = document.getElementById("asset-info");
-    assetList.innerHTML = "";
-    const assets = ProjectManager.list_assets();
-    for(const assetName in assets){
-      const item = document.createElement("div");
-      item.textContent = `${assetName} (${assets[assetName].type})`;
-      item.style.cursor = "pointer";
-      item.onclick = ()=>selectAsset(assetName);
-      assetList.appendChild(item);
-    }
-  }
-
-  function selectAsset(assetName){
-    const asset = ProjectManager.list_assets()[assetName];
-    const display = document.getElementById("asset-display");
-    display.innerHTML = "";
-    if(!asset) return;
-
-    if(asset.type==="texture"){
-      const img = document.createElement("img");
-      img.src = URL.createObjectURL(new Blob([asset.data]));
-      img.style.maxWidth="100%";
-      img.style.maxHeight="100%";
-      display.appendChild(img);
-    } else if(asset.type==="gltf"){
-      const container = document.createElement("div");
-      container.style.width="100%";
-      container.style.height="100%";
-      display.appendChild(container);
-
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(75, container.offsetWidth/container.offsetHeight,0.1,1000);
-      const renderer = new THREE.WebGLRenderer({antialias:true});
-      renderer.setSize(container.offsetWidth,container.offsetHeight);
-      container.appendChild(renderer.domElement);
-
-      const loader = new THREE.GLTFLoader();
-      const blob = new Blob([asset.data]);
-      loader.parse(blob, "", function(gltf){
-        scene.add(gltf.scene);
-        camera.position.z = 5;
-        function animate(){
-          requestAnimationFrame(animate);
-          renderer.render(scene,camera);
-        }
-        animate();
-      });
-    } else if(asset.type==="audio"){
-      const audio = document.createElement("audio");
-      audio.controls = true;
-      audio.src = URL.createObjectURL(new Blob([asset.data]));
-      display.appendChild(audio);
-    } else if(asset.type==="font"){
-      const p = document.createElement("p");
-      p.textContent = `Font: ${assetName}`;
-      display.appendChild(p);
-    }
-  }
-
-  // --- NLP Interface ---
-  function sendNLPCommandGUI(){
-    const cmdInput = document.getElementById("nlp-command");
-    const cmd = cmdInput.value.trim();
+  async function sendNLPCommandGUI() {
+    const cmd = document.getElementById("nlp-command").value.trim();
     if(!cmd) return;
-    appendNLP(`> ${cmd}`);
-    cmdInput.value="";
-
-    const response = ProjectManager.process_nlp_command(cmd);
-
-    appendNLP(response);
-
-    refreshSceneList();
-    refreshAssetList();
+    document.getElementById("nlp-command").value = "";
+    await ProjectManager.process_nlp_command(cmd);
   }
 
-  function appendNLP(message){
-    const panel = document.getElementById("nlp-log");
+  function appendNLP(message) {
+    const panel = document.getElementById("nlp-interface");
     panel.innerHTML += `<div>${message}</div>`;
     panel.scrollTop = panel.scrollHeight;
   }
 
-  // --- Project Export ---
-  async function generateProjectGUI(){
-    const projectName = prompt("Project Name:") || "GodotProject";
-    appendNLP(`Generating project '${projectName}'...`);
-
-    const zip = new JSZip();
-    const scenes = ProjectManager.get_scenes();
-    for(const sceneName in scenes){
-      const scene = scenes[sceneName];
-      const tscnContent = ProjectManager.get_scene_file(sceneName);
-      zip.file(`${projectName}/${sceneName}.tscn`, tscnContent);
-      for(const scriptName in scene.scripts){
-        const code = scene.scripts[scriptName];
-        zip.file(`${projectName}/scripts/${scriptName}.gd`, code);
-      }
-    }
-
-    const assets = ProjectManager.list_assets();
-    for(const assetName in assets){
-      const asset = assets[assetName];
-      const buffer = new Uint8Array(asset.data);
-      zip.file(`${projectName}/assets/${assetName}`, buffer);
-    }
-
-    const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
-    zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
-
-    const content = await zip.generateAsync({type:"blob"});
-    saveAs(content, `${projectName}.zip`);
-    appendNLP(`Project '${projectName}' ZIP ready for download.`);
-  }
-
-  // --- Initialization ---
-  refreshSceneList();
-  refreshAssetList();
+  // Initialize Godot Runtime (optional)
+  if(window.godotInstance) initGodotRuntime(window.godotInstance);
 </script>
+
 </body>
 </html>
