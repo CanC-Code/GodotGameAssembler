@@ -1,111 +1,94 @@
-ProjectManager.process_nlp_command = async function(command) {
-    appendNLP(`> ${command}`); // Echo command in NLP panel
+// nlp_pro.js
+// Author: CCVO
+// Purpose: Advanced NLP processor for GodotGameAssembler
+// Generates structured project plan based on user text commands
 
-    try {
-        // 1. Get structured plan from NLP_PRO
-        const result = await NLP_PRO.process(command); 
-        // Expect result = { plan: [...], questions: [...] }
-        if (!result || (!result.plan && !result.questions)) return "Could not parse command.";
+const NLP_PRO = {
+    async process(command) {
+        if (!command || typeof command !== "string") return [];
 
-        const plan = result.plan || [];
-        const questions = result.questions || [];
-        let response = "";
+        command = command.trim().toLowerCase();
+        const plan = [];
 
-        // 2. Handle follow-up questions first
-        if (questions.length > 0) {
-            for (const q of questions) {
-                this.nlp.context.pendingQuestions.push(q);
-                response += `Question: ${q.question}\n`;
-            }
-            appendNLP(response);
-            return response;
+        // ------------------------------
+        // RPG / 3D Scene
+        // ------------------------------
+        if (/rpg|3d/.test(command)) {
+            plan.push({ action: "create_scene", name: "3DMultiplayerScene", rootType: "Node" });
+            plan.push({
+                action: "add_node",
+                scene: "3DMultiplayerScene",
+                name: "Player",
+                type: "KinematicBody"
+            });
+            plan.push({
+                action: "add_script",
+                scene: "3DMultiplayerScene",
+                name: "Player3D.gd",
+                code: `extends KinematicBody
+var speed=8
+var anim_state=""
+onready var anim=$AnimationPlayer
+func _physics_process(delta):
+    var dir=Vector3()
+    dir.x=Input.get_action_strength("move_right")-Input.get_action_strength("move_left")
+    dir.z=Input.get_action_strength("move_backward")-Input.get_action_strength("move_forward")
+    dir=dir.normalized()
+    move_and_slide(dir*speed)
+    if dir.length()>0:
+        anim.play("Run")
+        anim_state="Run"
+    else:
+        anim.play("Idle")
+        anim_state="Idle"
+remote func sync_state(pos,rot,anim_s):
+    translation=pos
+    rotation=rot
+    anim.play(anim_s)`
+            });
+            plan.push({ action: "add_node", scene: "3DMultiplayerScene", name: "Camera", type: "Camera", parent: "Player" });
+            plan.push({ action: "add_node", scene: "3DMultiplayerScene", name: "UI", type: "CanvasLayer" });
+            plan.push({ action: "procedural_generate", scene: "3DMultiplayerScene" });
         }
 
-        // 3. Execute plan steps
-        for (const step of plan) {
-            switch (step.action) {
-                case "create_scene":
-                    response += this.add_scene(step.name)
-                        ? `Scene '${step.name}' created.\n`
-                        : `Scene '${step.name}' already exists.\n`;
-                    this.nlp.context.currentScene = step.name;
-                    break;
-
-                case "add_node":
-                    response += this.add_node(step.scene, step.name, step.type, step.parent || "")
-                        ? `Node '${step.name}' added to scene '${step.scene}'.\n`
-                        : `Node '${step.name}' already exists in scene '${step.scene}'.\n`;
-                    if (step.script) {
-                        response += this.add_script(step.script.name, step.script.code)
-                            ? `Script '${step.script.name}' added.\n`
-                            : `Script '${step.script.name}' already exists.\n`;
-                        response += this.attach_script(step.scene, step.name, step.script.name)
-                            ? `Script '${step.script.name}' attached to '${step.name}'.\n`
-                            : `Script '${step.script.name}' already attached to '${step.name}'.\n`;
-                    }
-                    break;
-
-                case "add_script":
-                    response += this.add_script(step.name, step.code || "# Your code here\n")
-                        ? `Script '${step.name}' created.\n`
-                        : `Script '${step.name}' already exists.\n`;
-                    if (step.attachTo) {
-                        response += this.attach_script(step.attachTo.scene, step.attachTo.node, step.name)
-                            ? `Script '${step.name}' attached to '${step.attachTo.node}'.\n`
-                            : `Script '${step.name}' already attached.\n`;
-                    }
-                    break;
-
-                case "upload_asset":
-                    response += `Use GUI to upload asset: '${step.name}'.\n`;
-                    break;
-
-                case "procedural_generate":
-                    if (step.scene && step.worldType) {
-                        this.nlp._generateTerrain(step.scene, step.worldType);
-                        response += `Procedurally generated '${step.worldType}' in scene '${step.scene}'.\n`;
-                    }
-                    break;
-
-                case "enable_multiplayer":
-                    this.nlp._setupMultiplayer(step.scene, step.mode || "ENet");
-                    response += `Multiplayer enabled for scene '${step.scene}'.\n`;
-                    break;
-
-                case "add_loot":
-                    if (step.enemy && step.item) {
-                        this.nlp.LootManager.addLoot(step.enemy, step.item, step.chance || 0.5);
-                        this.nlp.LootManager.assignLootToEnemies();
-                        response += `Loot '${step.item}' assigned to enemy '${step.enemy}'.\n`;
-                    }
-                    break;
-
-                case "add_quest":
-                    if (step.npc && step.objective && step.reward) {
-                        this.nlp.LootManager.addQuest(step.npc, step.objective, step.reward);
-                        this.nlp.LootManager.assignQuestsToNPCs();
-                        response += `Quest '${step.objective}' for NPC '${step.npc}' with reward '${step.reward}' added.\n`;
-                    }
-                    break;
-
-                default:
-                    response += `Unknown action: ${step.action}\n`;
-            }
+        // ------------------------------
+        // Loot / Item
+        // ------------------------------
+        if (/loot|item/.test(command)) {
+            plan.push({ action: "add_loot" });
         }
 
-        // 4. Ask pending questions if any
-        if (this.nlp.context.pendingQuestions.length > 0) {
-            const nextQ = this.nlp.context.pendingQuestions[0];
-            response += `Next question: ${nextQ.question}\n`;
+        // ------------------------------
+        // Quest
+        // ------------------------------
+        if (/quest/.test(command)) {
+            plan.push({ action: "add_quest" });
         }
 
-        appendNLP(response);
-        return response;
+        // ------------------------------
+        // Multiplayer
+        // ------------------------------
+        if (/multiplayer/.test(command)) {
+            plan.push({ action: "enable_multiplayer", scene: "3DMultiplayerScene", mode: "ENet" });
+        }
 
-    } catch (err) {
-        const errMsg = `Error: ${err}`;
-        appendNLP(errMsg);
-        console.error(err);
-        return errMsg;
+        // ------------------------------
+        // Endless Runner
+        // ------------------------------
+        if (/endless.*run/.test(command)) {
+            plan.push({ action: "create_scene", name: "EndlessRunnerScene", rootType: "Node" });
+            plan.push({
+                action: "add_node",
+                scene: "EndlessRunnerScene",
+                name: "Player",
+                type: "KinematicBody"
+            });
+            plan.push({ action: "procedural_generate", scene: "EndlessRunnerScene" });
+        }
+
+        return plan;
     }
 };
+
+// Expose globally
+window.NLP_PRO = NLP_PRO;
