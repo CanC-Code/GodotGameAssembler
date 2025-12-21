@@ -8,21 +8,21 @@
 // ------------------------------
 class ProjectGraph {
     constructor() {
-        this.scenes = {};
-        this.assets = {};
-        this.scripts = {};
+        this.scenes = {};      // { sceneName: { nodes, scripts, rootType } }
+        this.scripts = {};     // { scriptName: code }
+        this.assets = {};      // { path: { type, data } }
     }
 
-    addScene(name, rootType = "Node") {
+    addScene(name, rootType = "Node2D") {
         if (this.scenes[name]) return false;
-        this.scenes[name] = { nodes: {}, rootType };
+        this.scenes[name] = { nodes: {}, scripts: {}, rootType };
         return true;
     }
 
     addNode(sceneName, nodeName, type = "Node", parent = "") {
         const scene = this.scenes[sceneName];
         if (!scene || scene.nodes[nodeName]) return false;
-        scene.nodes[nodeName] = { type, parent, properties: {}, scripts: [], signals: [] };
+        scene.nodes[nodeName] = { type, parent, properties: {}, scripts: [] };
         return true;
     }
 
@@ -43,7 +43,9 @@ class ProjectGraph {
         return true;
     }
 
-    getScene(sceneName) { return this.scenes[sceneName] || null; }
+    getScene(sceneName) {
+        return this.scenes[sceneName] || null;
+    }
 }
 
 // ------------------------------
@@ -52,33 +54,64 @@ class ProjectGraph {
 class SceneComposer {
     constructor(graph) { this.graph = graph; }
 
+    composeAllScenes(projectName = "GodotProject") {
+        const zip = new JSZip();
+        for (const sceneName in this.graph.scenes) {
+            const sceneText = this.composeScene(sceneName);
+            zip.file(`${projectName}/${sceneName}.tscn`, sceneText);
+
+            // Scripts
+            const scene = this.graph.scenes[sceneName];
+            for (const nodeName in scene.nodes) {
+                const node = scene.nodes[nodeName];
+                node.scripts.forEach(scriptName => {
+                    if (this.graph.scripts[scriptName])
+                        zip.file(`${projectName}/scripts/${scriptName}.gd`, this.graph.scripts[scriptName]);
+                });
+            }
+        }
+
+        // Made-by Slide
+        const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
+        zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
+
+        return zip;
+    }
+
     composeScene(sceneName) {
         const scene = this.graph.getScene(sceneName);
         if (!scene) return "";
+
         let text = `[gd_scene load_steps=2 format=2]\n`;
         text += `[node name="${sceneName}" type="${scene.rootType}"]\n`;
 
         for (const nodeName in scene.nodes) {
             const node = scene.nodes[nodeName];
-            text += `[node name="${nodeName}" type="${node.type}" parent="${node.parent}"]\n`;
+            text += `[node name="${nodeName}" type="${node.type}" parent="${node.parent || ""}"]\n`;
             for (const prop in node.properties) {
-                text += `${prop} = ${this._propToString(node.properties[prop])}\n`;
+                text += `${prop} = ${this._valueToString(node.properties[prop])}\n`;
             }
             for (const scriptName of node.scripts) {
-                text += `script = ExtResource( ${scriptName} )\n`;
+                text += `script = ExtResource(${scriptName})\n`;
             }
         }
         return text;
     }
 
-    _propToString(value) {
+    _valueToString(value) {
         if (typeof value === "string") return `"${value}"`;
-        if (Array.isArray(value)) {
-            if (value.length === 2) return `Vector2(${value[0]},${value[1]})`;
-            if (value.length === 3) return `Vector3(${value[0]},${value[1]},${value[2]})`;
+        if (typeof value === "boolean") return String(value);
+        if (typeof value === "number") return value.toString();
+        if (value && typeof value === "object") {
+            if ("x" in value && "y" in value && !"z" in value) return `Vector2(${value.x},${value.y})`;
+            if ("x" in value && "y" in value && "z" in value) return `Vector3(${value.x},${value.y},${value.z})`;
+            if ("r" in value && "g" in value && "b" in value) {
+                return value.a !== undefined
+                    ? `Color(${value.r},${value.g},${value.b},${value.a})`
+                    : `Color(${value.r},${value.g},${value.b})`;
+            }
         }
-        if (typeof value === "boolean") return value ? "true" : "false";
-        return value.toString();
+        return `"${value}"`;
     }
 }
 
@@ -88,6 +121,7 @@ class SceneComposer {
 class AssetHandler {
     constructor(graph) { this.graph = graph; }
     addAsset(path, type, data) { return this.graph.addAsset(path, type, data); }
+    listAssets() { return this.graph.assets; }
 }
 
 // ------------------------------
@@ -98,343 +132,135 @@ class ZipExporter {
         this.graph = graph;
         this.composer = composer;
         this.assetHandler = assetHandler;
+        this.onExportStarted = null;
+        this.onExportProgress = null;
+        this.onExportFinished = null;
+        this.onExportFailed = null;
     }
 
-    async generateZip(projectName) {
-        const zip = new JSZip();
+    async exportProject(projectName = "GodotProject") {
+        try {
+            if (typeof this.onExportStarted === "function") this.onExportStarted();
 
-        for (const sceneName in this.graph.scenes) {
-            zip.file(`${projectName}/${sceneName}.tscn`, this.composer.composeScene(sceneName));
-        }
-        for (const scriptName in this.graph.scripts) {
-            zip.file(`${projectName}/scripts/${scriptName}.gd`, this.graph.scripts[scriptName]);
-        }
-        for (const path in this.graph.assets) {
-            zip.file(`${projectName}/assets/${path}`, this.graph.assets[path].data);
-        }
+            const zip = new JSZip();
 
-        zip.file(`${projectName}/export_presets.cfg`, `[preset]\nname="Android"\ntarget="Android"`);
-        zip.file(`${projectName}/AndroidManifest.xml`, `<manifest package="org.godotgame.${projectName}"></manifest>`);
-
-        return await zip.generateAsync({ type: "blob" });
-    }
-}
-
-// ------------------------------
-// Loot & Quest Manager
-// ------------------------------
-class LootAndQuestManager {
-    constructor(graph) {
-        this.graph = graph;
-        this.lootTables = {};
-        this.quests = {};
-    }
-
-    addLoot(enemyName, itemName, chance=0.5) {
-        if (!this.lootTables[enemyName]) this.lootTables[enemyName] = [];
-        this.lootTables[enemyName].push({ item: itemName, chance });
-        if (!this.graph.assets[itemName])
-            this.graph.addAsset(itemName, "Item", `{ "name": "${itemName}", "type": "Consumable" }`);
-    }
-
-    addQuest(npcName, objective, reward) {
-        if (!this.quests[npcName]) this.quests[npcName] = [];
-        this.quests[npcName].push({ objective, reward });
-    }
-
-    assignLootToEnemies() {
-        for (const enemyName in this.lootTables) {
-            const scriptName = `${enemyName}_Loot.gd`;
-            let code = `extends KinematicBody\nfunc _on_death():\n`;
-            for (const loot of this.lootTables[enemyName]) {
-                code += `    if randf() <= ${loot.chance}:\n        print("Drop ${loot.item}")\n`;
+            // Scenes & Scripts
+            this.composer.graph = this.graph;
+            const scenesZip = this.composer.composeAllScenes(projectName);
+            for (const path in scenesZip.files) {
+                const content = await scenesZip.files[path].async("uint8array");
+                zip.file(path, content);
             }
-            this.graph.addScript(scriptName, code);
-            this.graph.attachScript("3DMultiplayerScene", enemyName, scriptName);
+
+            // Assets
+            const assets = this.assetHandler.listAssets();
+            for (const name in assets) {
+                const asset = assets[name];
+                const uint8 = asset.data instanceof Uint8Array ? asset.data : new TextEncoder().encode(asset.data);
+                zip.file(`${projectName}/assets/${name}`, uint8);
+            }
+
+            // Generate ZIP
+            const blob = await zip.generateAsync({ type: "blob", onUpdate: meta => {
+                if (typeof this.onExportProgress === "function") this.onExportProgress(meta.percent);
+            }});
+
+            // Trigger download
+            saveAs(blob, `${projectName}.zip`);
+            if (typeof this.onExportFinished === "function") this.onExportFinished(`${projectName}.zip`);
+
+        } catch (err) {
+            console.error(err);
+            if (typeof this.onExportFailed === "function") this.onExportFailed(err.message);
         }
     }
 
-    assignQuestsToNPCs() {
-        for (const npcName in this.quests) {
-            const scriptName = `${npcName}_Quest.gd`;
-            let code = `extends KinematicBody\nfunc _ready():\n`;
-            for (const quest of this.quests[npcName]) {
-                code += `    print("Quest: ${quest.objective} -> Reward: ${quest.reward}")\n`;
-            }
-            this.graph.addScript(scriptName, code);
-            this.graph.attachScript("3DMultiplayerScene", npcName, scriptName);
-        }
-    }
+    setExportStartedCallback(cb){ if(typeof cb==="function") this.onExportStarted=cb; }
+    setExportProgressCallback(cb){ if(typeof cb==="function") this.onExportProgress=cb; }
+    setExportFinishedCallback(cb){ if(typeof cb==="function") this.onExportFinished=cb; }
+    setExportFailedCallback(cb){ if(typeof cb==="function") this.onExportFailed=cb; }
 }
 
 // ------------------------------
 // NLP Engine
 // ------------------------------
-class NLP {
+class NLP_PRO {
     constructor(graph) {
         this.graph = graph;
-        this.LootManager = new LootAndQuestManager(graph);
-        this.history = [];
-        this.context = { currentScene: null, pendingQuestions: [], answers: {}, multiplayerEnabled: false };
     }
 
-    async process(input) {
-        const text = input.trim();
-        this.history.push(text);
+    // Returns structured plan: [{action, name, type, ...}]
+    async process(command) {
+        const plan = [];
+        const text = command.toLowerCase();
 
-        if (this.context.pendingQuestions.length > 0) {
-            const q = this.context.pendingQuestions.shift();
-            this.context.answers[q.id] = text;
-            await this._applyAnswer(q.id, text);
-            if (this.context.pendingQuestions.length > 0)
-                return this.context.pendingQuestions[0].question;
-            return `Updated project based on your answer '${text}'.`;
+        if (/rpg|3d/.test(text)) {
+            plan.push({action:"create_scene", name:"3DMultiplayerScene", rootType:"Node"});
+            plan.push({action:"add_node", scene:"3DMultiplayerScene", name:"Player", type:"KinematicBody"});
+            plan.push({action:"add_node", scene:"3DMultiplayerScene", name:"Camera", type:"Camera", parent:"Player"});
+            plan.push({action:"add_node", scene:"3DMultiplayerScene", name:"UI", type:"CanvasLayer"});
         }
 
-        const { plan, questions } = await this._generatePlan(text);
-        this.context.pendingQuestions = questions;
-
-        let response = "";
-        for (const step of plan) {
-            switch (step.action) {
-                case "create_scene":
-                    this.graph.addScene(step.name, step.rootType || "Node");
-                    this.context.currentScene = step.name;
-                    response += `Scene '${step.name}' created.\n`;
-                    break;
-                case "add_node":
-                    this.graph.addNode(step.scene, step.name, step.type, step.parent || "");
-                    if (step.script) {
-                        this.graph.addScript(step.script.name, step.script.code);
-                        this.graph.attachScript(step.scene, step.name, step.script.name);
-                    }
-                    response += `Node '${step.name}' added to scene '${step.scene}'.\n`;
-                    break;
-                case "procedural_generate":
-                    response += `Procedural generation started for scene '${step.scene}'.\n`;
-                    break;
-                case "add_loot":
-                case "add_quest":
-                    response += `Configured loot/quest steps. Awaiting answers.\n`;
-                    break;
-                case "enable_multiplayer":
-                    this._setupMultiplayer(step.scene, step.mode);
-                    response += `Multiplayer enabled for scene '${step.scene}'.\n`;
-                    break;
-                default:
-                    response += `Unknown action: ${step.action}\n`;
-            }
+        if (/endless|runner/.test(text)) {
+            plan.push({action:"create_scene", name:"RunnerScene", rootType:"Node2D"});
         }
 
-        if (this.context.pendingQuestions.length > 0)
-            return this.context.pendingQuestions[0].question;
-
-        return response || "Plan executed.";
-    }
-
-    async _applyAnswer(id, answer) {
-        const scene = this.context.currentScene;
-        if (!scene) return;
-
-        switch(id){
-            case "actionButtons":
-                const n = parseInt(answer, 10) || 3;
-                for (let i = 1; i <= n; i++) {
-                    const btnName = `Button${i}`;
-                    this.graph.addNode(scene, btnName, "TouchScreenButton", "UI");
-                    this.graph.addScript(`${btnName}_script.gd`,
-                        `extends TouchScreenButton\nfunc _pressed():\n    print("${btnName} pressed")`);
-                    this.graph.attachScript(scene, btnName, `${btnName}_script.gd`);
-                }
-                break;
-            case "worldType": this._generateTerrain(scene, answer); break;
-            case "enemyCount":
-                const count = parseInt(answer,10) || 5;
-                for(let i=0;i<count;i++) this._spawnEnemy(scene,i); break;
-            case "npcCount":
-                const npcCount = parseInt(answer,10) || 2;
-                for(let i=0;i<npcCount;i++) this._spawnNPC(scene,i); break;
-            case "lootEnemy": this.context.answers.lootEnemy = answer; break;
-            case "lootItem": this.context.answers.lootItem = answer; break;
-            case "lootChance":
-                const chance = parseFloat(answer)||0.5;
-                this.LootManager.addLoot(this.context.answers.lootEnemy,this.context.answers.lootItem,chance);
-                this.LootManager.assignLootToEnemies(); break;
-            case "questNPC": this.context.answers.questNPC = answer; break;
-            case "questObjective": this.context.answers.questObjective = answer; break;
-            case "questReward":
-                this.LootManager.addQuest(this.context.answers.questNPC,
-                    this.context.answers.questObjective,answer);
-                this.LootManager.assignQuestsToNPCs(); break;
-        }
-    }
-
-    _generateTerrain(scene, type) {
-        switch(type.toLowerCase()) {
-            case "forest": for(let i=0;i<20;i++){
-                const tree=`Tree${i}`;
-                this.graph.addNode(scene,tree,"StaticBody","World");
-                this.graph.addScript(`${tree}_script.gd`,`extends StaticBody\n# Tree collision`);
-                this.graph.attachScript(scene,tree,`${tree}_script.gd`);
-            } break;
-            case "dungeon": for(let i=0;i<50;i++){
-                const tile=`DungeonTile${i}`;
-                this.graph.addNode(scene,tile,"StaticBody","World");
-            } break;
-            case "open field": for(let i=0;i<10;i++){
-                const rock=`Rock${i}`;
-                this.graph.addNode(scene,rock,"StaticBody","World");
-            } break;
-        }
-    }
-
-    _spawnEnemy(scene,index){
-        const enemy=`Enemy${index}`;
-        this.graph.addNode(scene,enemy,"KinematicBody","World");
-        this.graph.addScript(`${enemy}.gd`,`
-extends KinematicBody
-var speed=4
-func _physics_process(delta):
-    move_and_slide(Vector3(randf()-0.5,0,randf()-0.5)*speed)
-`);
-        this.graph.attachScript(scene,enemy,`${enemy}.gd`);
-    }
-
-    _spawnNPC(scene,index){
-        const npc=`NPC${index}`;
-        this.graph.addNode(scene,npc,"KinematicBody","World");
-        this.graph.addScript(`${npc}.gd`,`
-extends KinematicBody
-func _ready():
-    print("NPC ${index} ready")
-`);
-        this.graph.attachScript(scene,npc,`${npc}.gd`);
-    }
-
-    _setupMultiplayer(sceneName, type="ENet"){
-        this.context.multiplayerEnabled=true;
-        const mpNode="Multiplayer";
-        this.graph.addNode(sceneName,mpNode,"Node");
-        const scriptCode=`extends Node
-var peer
-func _ready():
-    peer=${type}MultiplayerPeer.new()
-    multiplayer.multiplayer_peer=peer
-func rpc_move(id,pos,rot,anim_state):
-    rpc_id(id,"sync_state",pos,rot,anim_state)`;
-        const scriptName="Multiplayer.gd";
-        this.graph.addScript(scriptName,scriptCode);
-        this.graph.attachScript(sceneName,mpNode,scriptName);
-    }
-
-    async _generatePlan(text) {
-        const plan=[],questions=[];
-        text=text.toLowerCase();
-
-        if(/rpg|3d/.test(text)){
-            plan.push({action:"create_scene",name:"3DMultiplayerScene",rootType:"Node"});
-            plan.push({
-                action:"add_node",
-                scene:"3DMultiplayerScene",
-                name:"Player",
-                type:"KinematicBody",
-                script:{
-                    name:"Player3D.gd",
-                    code:`extends KinematicBody
-var speed=8
-var anim_state=""
-onready var anim=$AnimationPlayer
-func _physics_process(delta):
-    var dir=Vector3()
-    dir.x=Input.get_action_strength("move_right")-Input.get_action_strength("move_left")
-    dir.z=Input.get_action_strength("move_backward")-Input.get_action_strength("move_forward")
-    dir=dir.normalized()
-    move_and_slide(dir*speed)
-    if dir.length()>0:
-        anim.play("Run")
-        anim_state="Run"
-    else:
-        anim.play("Idle")
-        anim_state="Idle"
-remote func sync_state(pos,rot,anim_s):
-    translation=pos
-    rotation=rot
-    anim.play(anim_s)`
-                }
-            });
-            plan.push({action:"add_node",scene:"3DMultiplayerScene",name:"Camera",type:"Camera",parent:"Player"});
-            plan.push({action:"add_node",scene:"3DMultiplayerScene",name:"UI",type:"CanvasLayer"});
-            plan.push({action:"procedural_generate",scene:"3DMultiplayerScene"});
-
-            questions.push({id:"actionButtons",question:"How many action buttons?"});
-            questions.push({id:"animationType",question:"Animation types for Player? (Idle,Run,Jump)"});
-            questions.push({id:"multiplayerType",question:"Enable multiplayer? (ENet/WebSocket)"});
-            questions.push({id:"worldType",question:"World type? (Forest, Dungeon, Open Field, Endless Runner)"});
-            questions.push({id:"enemyCount",question:"How many enemies to spawn?"});
-            questions.push({id:"npcCount",question:"How many NPCs to place?"});
-        }
-
-        if(/loot|item/.test(text)){
-            plan.push({action:"add_loot"});
-            questions.push({id:"lootEnemy",question:"Which enemy should drop loot?"});
-            questions.push({id:"lootItem",question:"Item name to drop?"});
-            questions.push({id:"lootChance",question:"Drop chance (0-1)?"});
-        }
-        if(/quest/.test(text)){
-            plan.push({action:"add_quest"});
-            questions.push({id:"questNPC",question:"Which NPC gives the quest?"});
-            questions.push({id:"questObjective",question:"What is the quest objective?"});
-            questions.push({id:"questReward",question:"Reward for completing the quest?"});
-        }
-
-        return {plan,questions};
+        return plan;
     }
 }
 
 // ------------------------------
 // ProjectManager Global
 // ------------------------------
-const ProjectManager={
-    graph:new ProjectGraph(),
-    composer:null,
-    assets:null,
-    zip:null,
-    nlp:null,
+const ProjectManager = {
+    graph: new ProjectGraph(),
+    composer: null,
+    assets: null,
+    zip: null,
+    nlp: null,
+    NLP_PRO: null,
 
-    init(){
-        this.composer=new SceneComposer(this.graph);
-        this.assets=new AssetHandler(this.graph);
-        this.zip=new ZipExporter(this.graph,this.composer,this.assets);
-        this.nlp=new NLP(this.graph);
+    init() {
+        this.composer = new SceneComposer(this.graph);
+        this.assets = new AssetHandler(this.graph);
+        this.zip = new ZipExporter(this.graph, this.composer, this.assets);
+        this.NLP_PRO = new NLP_PRO(this.graph);
     },
 
-    add_scene(name){return this.graph.addScene(name);},
-    add_node(scene,node,type,parent){return this.graph.addNode(scene,node,type,parent);},
-    add_script(name,code){return this.graph.addScript(name,code);},
-    attach_script(scene,node,script){return this.graph.attachScript(scene,node,script);},
-    upload_asset(path,type,data){return this.graph.addAsset(path,type,data);},
-    async generate_project(name){return await this.zip.generateZip(name);},
-    process_nlp_command(cmd){return this.nlp.process(cmd);},
-    get_scenes(){return this.graph.scenes;},
-    get_scene_file(name){return this.composer.composeScene(name);},
+    add_scene(name){ return this.graph.addScene(name); },
+    add_node(scene,node,type,parent){ return this.graph.addNode(scene,node,type,parent); },
+    add_script(name,code){ return this.graph.addScript(name,code); },
+    attach_script(scene,node,script){ return this.graph.attachScript(scene,node,script); },
+    upload_asset(path,type,data){ return this.graph.addAsset(path,type,data); },
 
-    // ------------------------------
-    // NLP wrapper: auto-resolve & return string
-    // ------------------------------
-    process_nlp: async function(command){
+    async export(projectName){ return await this.zip.exportProject(projectName); },
+
+    // NLP integration
+    async process_nlp(command){
         appendNLP(`> ${command}`);
         try {
-            const response = await this.process_nlp_command(command);
+            const plan = await this.NLP_PRO.process(command);
+            if(!plan || plan.length===0) return "Could not parse command.";
+
+            let response = "";
+            for(const step of plan){
+                switch(step.action){
+                    case "create_scene": response += this.add_scene(step.name)+"\n"; break;
+                    case "add_node": response += this.add_node(step.scene, step.name, step.type, step.parent||"")+"\n"; break;
+                    case "add_script": response += this.add_script(step.name, step.code||"# code")+"\n"; break;
+                    default: response += `Unknown action: ${step.action}\n`;
+                }
+            }
             appendNLP(response);
             return response;
         } catch(err) {
-            const errMsg=`Error: ${err}`;
-            appendNLP(errMsg);
+            const msg=`Error: ${err}`;
             console.error(err);
-            return errMsg;
+            appendNLP(msg);
+            return msg;
         }
     }
 };
 
 ProjectManager.init();
-window.ProjectManager=ProjectManager;
+window.ProjectManager = ProjectManager;
