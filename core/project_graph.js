@@ -5,7 +5,7 @@
 
 class ProjectGraph {
     constructor() {
-        this.scenes = {}; 
+        this.scenes = {};
         // structure:
         // scenes = {
         //   SceneName: {
@@ -89,6 +89,26 @@ class ProjectGraph {
     // -----------------------------
     getSceneGraph(sceneName) {
         return this.scenes[sceneName] || null;
+    }
+
+    // -----------------------------
+    // NEW: Scene file generation
+    // -----------------------------
+    generateSceneFile(sceneName) {
+        const scene = this.scenes[sceneName];
+        if (!scene) return `Scene '${sceneName}' not found.`;
+
+        let output = `[gd_scene]\nname=${sceneName}\n\nnodes:\n`;
+
+        for (const nodeName in scene.nodes) {
+            const node = scene.nodes[nodeName];
+            output += `- ${nodeName} (type: ${node.type}`;
+            if (node.parent) output += `, parent: ${node.parent}`;
+            if (node.scripts.length) output += `, scripts: ${node.scripts.join(", ")}`;
+            output += `)\n`;
+        }
+
+        return output;
     }
 }
 
