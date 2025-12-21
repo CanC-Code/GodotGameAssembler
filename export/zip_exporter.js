@@ -1,12 +1,12 @@
 // export/zip_exporter.js
 // Author: CCVO
 // Purpose: Package GodotGameAssembler projects into a downloadable ZIP
-// Combines scenes, scripts, and assets
+// Fully aligned with ProjectManager & SceneComposer
 
 class ZipExporter {
     constructor(projectGraph, sceneComposer, assetHandler) {
         if (!projectGraph || !sceneComposer || !assetHandler) {
-            throw new Error("Dependencies not set: ProjectGraph, SceneComposer, AssetHandler required");
+            throw new Error("Dependencies required: ProjectGraph, SceneComposer, AssetHandler");
         }
         this.projectGraph = projectGraph;
         this.sceneComposer = sceneComposer;
@@ -29,27 +29,29 @@ class ZipExporter {
             const zip = new JSZip();
 
             // --- Step 1: Scenes & Scripts ---
-            this.sceneComposer.projectGraph = this.projectGraph; // ensure graph sync
             const scenesZip = this.sceneComposer.composeAllScenes(projectName);
-
             for (const filePath in scenesZip.files) {
-                zip.file(filePath, scenesZip.files[filePath].async("uint8array ?").catch(()=>{}));
+                const content = await scenesZip.file(filePath).async("uint8array").catch(() => null);
+                if (content) zip.file(filePath, content);
             }
 
             // --- Step 2: Assets ---
             const assets = this.assetHandler.listAssets();
             for (const name in assets) {
                 const asset = assets[name];
-                const uint8 = new Uint8Array(asset.data);
+                if (!asset.data) continue;
+
+                // Convert string assets to Uint8Array if necessary
+                const uint8 = asset.data instanceof Uint8Array
+                    ? asset.data
+                    : new TextEncoder().encode(asset.data.toString());
+
                 zip.file(`${projectName}/assets/${name}`, uint8);
             }
 
-            // --- Step 3: Made-by Slide already included in SceneComposer ---
-
-            // --- Step 4: Generate ZIP ---
+            // --- Step 3: Generate ZIP ---
             const blob = await zip.generateAsync({
                 type: "blob",
-                // optional progress callback
                 onUpdate: (metadata) => {
                     if (typeof this.onExportProgress === "function") {
                         this.onExportProgress(metadata.percent);
@@ -58,7 +60,13 @@ class ZipExporter {
             });
 
             // Trigger download
-            saveAs(blob, `${projectName}.zip`);
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = `${projectName}.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
 
             if (typeof this.onExportFinished === "function") this.onExportFinished(`${projectName}.zip`);
         } catch (err) {
