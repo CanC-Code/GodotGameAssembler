@@ -1,6 +1,6 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Connect ProjectManager + UI with dynamic top-right panel, NLP, and project tree
+// Purpose: Connect ProjectManager + UI with dynamic top-right panel, NLP, project tree, and folder/file info
 
 (function () {
 
@@ -33,17 +33,15 @@
       return;
     }
 
+    // --- Scenes ---
     scenes.forEach(sceneName => {
       const sceneDiv = document.createElement("div");
       sceneDiv.textContent = sceneName;
       sceneDiv.classList.add("tree-item");
       sceneDiv.dataset.type = "scene";
       sceneDiv.dataset.name = sceneName;
-
-      // Click handler
       sceneDiv.addEventListener("click", () => selectItem(sceneDiv));
 
-      // Node children
       const sceneData = ProjectManager.get_scene_file(sceneName);
       if (sceneData && sceneData.nodes) {
         const nodesContainer = document.createElement("div");
@@ -56,7 +54,6 @@
           nodeDiv.dataset.type = "node";
           nodeDiv.dataset.scene = sceneName;
           nodeDiv.dataset.name = nodeName;
-
           nodeDiv.addEventListener("click", () => selectItem(nodeDiv));
           nodesContainer.appendChild(nodeDiv);
         });
@@ -64,10 +61,46 @@
         sceneDiv.appendChild(nodesContainer);
       }
 
+      // --- Folders ---
+      if (ProjectManager.graph?.folders) {
+        const foldersInScene = Object.values(ProjectManager.graph.folders).filter(f => f.parent === sceneName);
+        if (foldersInScene.length) {
+          const foldersContainer = document.createElement("div");
+          foldersContainer.style.paddingLeft = "16px";
+          foldersInScene.forEach(folder => {
+            const folderDiv = document.createElement("div");
+            folderDiv.textContent = folder.name;
+            folderDiv.classList.add("tree-item");
+            folderDiv.dataset.type = "folder";
+            folderDiv.dataset.path = folder.name;
+            folderDiv.addEventListener("click", () => selectItem(folderDiv));
+
+            // --- Files in folder ---
+            if (folder.files.length) {
+              const filesContainer = document.createElement("div");
+              filesContainer.style.paddingLeft = "16px";
+              folder.files.forEach(filePath => {
+                const file = ProjectManager.graph.getAsset(filePath);
+                if (!file) return;
+                const fileDiv = document.createElement("div");
+                fileDiv.textContent = file.name;
+                fileDiv.classList.add("tree-item");
+                fileDiv.dataset.type = "file";
+                fileDiv.dataset.path = filePath;
+                fileDiv.addEventListener("click", () => selectItem(fileDiv));
+                filesContainer.appendChild(fileDiv);
+              });
+              folderDiv.appendChild(filesContainer);
+            }
+
+            foldersContainer.appendChild(folderDiv);
+          });
+          sceneDiv.appendChild(foldersContainer);
+        }
+      }
+
       projectTree.appendChild(sceneDiv);
     });
-
-    // TODO: Render folders/files from ProjectManager if needed
   }
 
   // -----------------------------
@@ -88,7 +121,6 @@
       const nodes = Object.keys(scene.nodes || {});
       html += `<strong>Nodes:</strong> ${nodes.length}<br>`;
       html += nodes.length ? `<ul>${nodes.map(n => `<li>${n}</li>`).join("")}</ul>` : "";
-
       fileInfo.innerHTML = html;
       filePreview.innerHTML = "<em>Scene preview not available</em>";
 
@@ -105,12 +137,35 @@
       html += node.children.length ? `<ul>${node.children.map(c => `<li>${c}</li>`).join("")}</ul>` : "";
       html += `<strong>Scripts:</strong> ${node.scripts.length}<br>`;
       html += node.scripts.length ? `<ul>${node.scripts.map(s => `<li>${s}</li>`).join("")}</ul>` : "";
-
       fileInfo.innerHTML = html;
       filePreview.innerHTML = "<em>Node preview not available</em>";
-    }
 
-    // Future: folders/files preview handling
+    } else if (type === "folder") {
+      const folder = ProjectManager.graph.getFolderContents(div.dataset.path);
+      let html = `<strong>Folder:</strong> ${div.dataset.path}<br>`;
+      html += `<strong>Subfolders:</strong> ${folder.subfolders.length}<br>`;
+      html += `<strong>Files:</strong> ${folder.files.length}<br>`;
+      html += folder.files.length ? `<ul>${folder.files.map(f => `<li>${f.name}</li>`).join("")}</ul>` : "";
+      fileInfo.innerHTML = html;
+      filePreview.innerHTML = "<em>Folder preview not available</em>";
+
+    } else if (type === "file") {
+      const file = ProjectManager.graph.getAsset(div.dataset.path);
+      if (!file) return clearPanel();
+
+      let html = `<strong>File:</strong> ${file.name}<br>`;
+      html += `<strong>Type:</strong> ${file.type}<br>`;
+      html += `<strong>Extension:</strong> ${file.extension}<br>`;
+      html += `<strong>Folder:</strong> ${file.folder || "None"}<br>`;
+      fileInfo.innerHTML = html;
+
+      // Placeholder preview
+      if (file.extension === "jpg" || file.extension === "png") {
+        filePreview.innerHTML = `<img src="${file.data || ""}" style="max-width:100%; max-height:100%;" />`;
+      } else {
+        filePreview.innerHTML = `<em>No preview available</em>`;
+      }
+    }
   }
 
   // -----------------------------
@@ -130,8 +185,6 @@
       const result = await ProjectManager.process_nlp_command(cmd);
       nlpLog.innerHTML += `<div class="chat-message system">${result}</div>`;
       nlpLog.scrollTop = nlpLog.scrollHeight;
-
-      // Refresh tree after potential changes
       renderTree();
     } else {
       nlpLog.innerHTML += `<div class="chat-message system">ProjectManager not loaded.</div>`;
