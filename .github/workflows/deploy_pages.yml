@@ -21,26 +21,28 @@ jobs:
           git config --global user.email "actions@github.com"
 
       # 3. Prepare gh-pages branch
-      - name: Create gh-pages branch
+      - name: Prepare gh-pages branch
         run: |
           git fetch origin gh-pages || true
           git checkout -B gh-pages
 
-      # 4. Copy only necessary interface files
+      # 4. Clean old interface files only
+      - name: Clean old interface files
+        run: |
+          rm -rf index.html libs godot.js || true
+
+      # 5. Copy interface files from main branch
       - name: Copy interface files
         run: |
-          # Remove old files
-          git rm -rf . || true
-          # Copy only public interface files
-          cp -r index.html libs godot.js ./  
+          cp -r index.html libs godot.js ./
 
-      # 5. Commit changes
+      # 6. Commit changes
       - name: Commit changes
         run: |
-          git add .
+          git add index.html libs godot.js
           git commit -m "Deploy GodotGameAssembler interface" || echo "No changes to commit"
 
-      # 6. Push to gh-pages
+      # 7. Push to gh-pages
       - name: Push to gh-pages
         run: |
           git push -f origin gh-pages
