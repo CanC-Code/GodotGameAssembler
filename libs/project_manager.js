@@ -1,108 +1,90 @@
 // libs/project_manager.js
 // Author: CCVO
-// Purpose: Central orchestrator for GodotGameAssembler
+// Purpose: Connect Godot Game Assembler UI to ProjectManager
 
 (function () {
 
-    if (!window.ProjectGraph) throw new Error("ProjectGraph not loaded");
-    if (!window.AssetHandler) throw new Error("AssetHandler not loaded");
-    if (!window.SceneComposer) throw new Error("SceneComposer not loaded");
-    if (!window.ZipExporter) throw new Error("ZipExporter not loaded");
+    if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
 
-    const graph = new ProjectGraph();
-    const assets = new AssetHandler();
-    const composer = new SceneComposer(graph);
-    const exporter = new ZipExporter(graph, composer, assets);
-    const nlp = window.NLP_PRO || null;
+    const pm = window.ProjectManager;
 
-    const ProjectManager = {
+    // ------------------------------
+    // DOM References
+    // ------------------------------
+    const projectTreeEl = document.getElementById("project-tree");
+    const fileInfoEl = document.getElementById("file-info");
+    const filePreviewEl = document.getElementById("file-preview");
+    const nlpInput = document.getElementById("nlp-command");
+    const nlpSend = document.getElementById("nlp-send");
+    const nlpLog = document.getElementById("nlp-log");
 
-        // -------------------
-        // Scene API
-        // -------------------
-        add_scene(name) {
-            return graph.addScene(name)
-                ? `Scene '${name}' created.`
-                : `Scene '${name}' already exists.`;
-        },
+    // ------------------------------
+    // Project Tree Rendering
+    // ------------------------------
+    function renderProjectTree() {
+        const scenes = pm.getScenes();
+        projectTreeEl.innerHTML = "";
 
-        add_node(scene, node, type = "Node2D", parent = "") {
-            return graph.addNode(scene, node, type, parent)
-                ? `Node '${node}' added to '${scene}'.`
-                : `Failed to add node '${node}'.`;
-        },
-
-        add_script(scene, name, code) {
-            return graph.attachScript(scene, name, code)
-                ? `Script '${name}' added to '${scene}'.`
-                : `Failed to add script '${name}'.`;
-        },
-
-        attach_script(scene, node, script) {
-            return graph.attachScript(scene, node, script)
-                ? `Script '${script}' attached to '${node}'.`
-                : `Failed to attach script.`;
-        },
-
-        // -------------------
-        // Asset API
-        // -------------------
-        upload_asset(path, type, extension, folder = null, data = null) {
-            return graph.addAsset(path, type, extension, folder, data)
-                ? `Asset '${path}' added.`
-                : `Failed to add asset '${path}'.`;
-        },
-
-        list_assets() {
-            return Object.values(graph.assets);
-        },
-
-        add_folder(path, parent = null) {
-            return graph.addFolder(path, parent)
-                ? `Folder '${path}' created.`
-                : `Folder '${path}' already exists.`;
-        },
-
-        get_folder_contents(path) {
-            return graph.getFolderContents(path);
-        },
-
-        // -------------------
-        // Queries
-        // -------------------
-        get_scenes() {
-            return graph.getScenes();
-        },
-
-        get_scene_file(sceneName) {
-            return graph.getSceneFile(sceneName);
-        },
-
-        // -------------------
-        // Export
-        // -------------------
-        async generate_project(projectName = "GodotProject") {
-            await exporter.exportProject(projectName);
-            return true;
-        },
-
-        // -------------------
-        // NLP
-        // -------------------
-        async process_nlp_command(command) {
-            if (!nlp) return "NLP engine not loaded.";
-
-            try {
-                const result = await nlp.process(command, this);
-                return result || "NLP processed.";
-            } catch (err) {
-                console.error(err);
-                return `NLP error: ${err.message}`;
-            }
+        if (scenes.length === 0) {
+            projectTreeEl.innerHTML = "<em>No scenes</em>";
+            return;
         }
-    };
 
-    window.ProjectManager = ProjectManager;
-    console.log("ProjectManager initialized.");
+        scenes.forEach(scene => {
+            const sceneItem = document.createElement("div");
+            sceneItem.classList.add("tree-item");
+            sceneItem.textContent = scene;
+            sceneItem.addEventListener("click", () => selectScene(scene));
+            projectTreeEl.appendChild(sceneItem);
+        });
+    }
+
+    function selectScene(sceneName) {
+        // Highlight selected
+        Array.from(projectTreeEl.children).forEach(el => el.classList.remove("selected"));
+        const selected = Array.from(projectTreeEl.children).find(el => el.textContent === sceneName);
+        if (selected) selected.classList.add("selected");
+
+        // Show info
+        const scene = pm.getSceneFile(sceneName);
+        if (!scene) return;
+
+        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
+            <strong>Nodes:</strong> ${Object.keys(scene.nodes).length}`;
+
+        // Preview placeholder (for now)
+        filePreviewEl.innerHTML = `<em>Scene preview not implemented yet.</em>`;
+    }
+
+    // ------------------------------
+    // NLP Command Handling
+    // ------------------------------
+    async function sendNLPCommandGUI() {
+        const cmd = nlpInput.value.trim();
+        if (!cmd) return;
+        nlpLog.innerHTML += `> ${cmd}\n`;
+        nlpInput.value = "";
+
+        if (pm) {
+            const result = await pm.process_nlp_command(cmd);
+            nlpLog.innerHTML += `${result}\n`;
+            nlpLog.scrollTop = nlpLog.scrollHeight;
+
+            // After command, refresh project tree
+            renderProjectTree();
+        } else {
+            nlpLog.innerHTML += "ProjectManager not loaded.\n";
+        }
+    }
+
+    nlpSend.addEventListener("click", sendNLPCommandGUI);
+    nlpInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendNLPCommandGUI();
+    });
+
+    // ------------------------------
+    // Initial Rendering
+    // ------------------------------
+    renderProjectTree();
 
 })();
