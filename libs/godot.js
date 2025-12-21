@@ -1,38 +1,26 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Godot Game Assembler core GUI + NLP + ProjectGraph integration
-// Handles project tree, file info, ZIP import, and NLP interface
+// Purpose: Interactive GodotGameAssembler frontend logic
+// Handles NLP console, guided game creation, project tree updates
 
 (function () {
 
-    if (!window.ProjectGraph) throw new Error("ProjectGraph not loaded");
-    if (!window.AssetHandler) throw new Error("AssetHandler not loaded");
-    if (!window.SceneComposer) throw new Error("SceneComposer not loaded");
-    if (!window.ZipExporter) throw new Error("ZipExporter not loaded");
-    if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
-    if (!window.NLP_PRO) throw new Error("NLP_PRO not loaded");
-
     // ------------------------------
-    // Core Instances
+    // Core references
     // ------------------------------
-    const graph = new ProjectGraph();
-    const assets = new AssetHandler();
-    const composer = new SceneComposer(graph);
-    const exporter = new ZipExporter(graph, composer, assets);
-    const nlp = window.NLP_PRO;
-
-    // ------------------------------
-    // DOM References
-    // ------------------------------
+    const nlpInput = document.getElementById("nlp-command");
+    const nlpSend = document.getElementById("nlp-send");
+    const nlpLog = document.getElementById("nlp-log");
     const projectTreeEl = document.getElementById("project-tree");
     const fileInfoEl = document.getElementById("file-info");
     const filePreviewEl = document.getElementById("file-preview");
-    const nlpLog = document.getElementById("nlp-log");
-    const nlpInput = document.getElementById("nlp-command");
-    const nlpSend = document.getElementById("nlp-send");
+
+    const PM = window.ProjectManager;
+
+    if (!PM) throw new Error("ProjectManager not loaded");
 
     // ------------------------------
-    // Helpers
+    // Utility
     // ------------------------------
     function escapeHTML(str) {
         return str.replace(/&/g, "&amp;")
@@ -41,74 +29,95 @@
     }
 
     // ------------------------------
-    // Project Tree Rendering
+    // Guided NLP Interpreter
     // ------------------------------
-    function buildTree(folderPath = null, container = projectTreeEl) {
-        container.innerHTML = "";
-        let items;
-        if (!folderPath) {
-            // Root: show scenes and top-level folders
-            items = [];
-            Object.keys(graph.scenes).forEach(scene => items.push({ name: scene, type: "scene" }));
-            Object.keys(graph.folders).forEach(folder => {
-                if (!graph.folders[folder].parent) items.push({ name: folder, type: "folder" });
-            });
-        } else {
-            const folderContents = graph.getFolderContents(folderPath);
-            items = folderContents.subfolders.map(f => ({ name: f.name, path: f.name, type: "folder" }))
-                  .concat(folderContents.files.map(f => ({ name: f.name, path: f.name, type: f.type || "file", extension: f.extension || "" })));
+    async function interpretCommand(cmd) {
+        cmd = cmd.trim();
+
+        if (!PM.gameState) PM.gameState = { step: "askName" };
+
+        // Step 1: Ask for game name
+        if (PM.gameState.step === "askName") {
+            PM.gameName = cmd;
+            PM.gameState.step = "askConcept";
+            return `Game named "${cmd}".\nDescribe the concept of your game:`;
         }
 
-        items.forEach(item => {
-            const div = document.createElement("div");
-            div.className = "tree-item";
-            div.textContent = item.name + (item.extension ? `.${item.extension}` : "");
-            div.dataset.type = item.type;
-            div.dataset.name = item.name;
-            div.dataset.path = item.path || item.name;
+        // Step 2: Ask for concept
+        if (PM.gameState.step === "askConcept") {
+            PM.gameConcept = cmd;
+            PM.gameState.step = "ready";
+            return `Concept set: "${cmd}".\nYou can now create scenes, add nodes, buttons, thumbsticks, and scripts.\nType 'help' to see commands.`;
+        }
 
-            div.addEventListener("click", () => {
-                renderFileInfo(item);
-            });
+        // Friendly NLP shortcuts
+        if (cmd.toLowerCase().startsWith("name game ")) {
+            PM.gameName = cmd.substr(10).trim();
+            return `Game named "${PM.gameName}".`;
+        }
+        if (cmd.toLowerCase().startsWith("set concept ")) {
+            PM.gameConcept = cmd.substr(12).trim();
+            return `Concept set: "${PM.gameConcept}".`;
+        }
 
-            container.appendChild(div);
+        // Delegate to ProjectManager
+        const result = await PM.process_nlp_command(cmd);
+        return result;
+    }
+
+    // ------------------------------
+    // Project Tree UI
+    // ------------------------------
+    function buildTree() {
+        if (!PM) return;
+
+        const scenes = PM.get_scenes();
+        if (!scenes.length) {
+            projectTreeEl.innerHTML = `<em>No scenes</em>`;
+            return;
+        }
+
+        projectTreeEl.innerHTML = "";
+        scenes.forEach(sceneName => {
+            const sceneNode = document.createElement("div");
+            sceneNode.className = "tree-item";
+            sceneNode.textContent = sceneName;
+            sceneNode.onclick = () => selectScene(sceneName);
+            projectTreeEl.appendChild(sceneNode);
+
+            const sceneData = PM.get_scene_file(sceneName);
+            if (sceneData && sceneData.nodes) {
+                Object.keys(sceneData.nodes).forEach(nodeName => {
+                    const nodeEl = document.createElement("div");
+                    nodeEl.className = "tree-item";
+                    nodeEl.style.paddingLeft = "15px";
+                    nodeEl.textContent = nodeName + " (" + sceneData.nodes[nodeName].type + ")";
+                    nodeEl.onclick = () => selectNode(sceneName, nodeName);
+                    projectTreeEl.appendChild(nodeEl);
+                });
+            }
         });
     }
 
-    function renderFileInfo(item) {
-        let html = `<strong>Name:</strong> ${escapeHTML(item.name)}<br>`;
-        html += `<strong>Type:</strong> ${escapeHTML(item.type)}<br>`;
-        if (item.type === "scene") {
-            const scene = graph.getScene(item.name);
-            const nodeCount = scene ? Object.keys(scene.nodes).length : 0;
-            html += `<strong>Nodes:</strong> ${nodeCount}<br>`;
-        }
-        if (item.type === "folder") {
-            const folder = graph.folders[item.path];
-            if (folder) {
-                html += `<strong>Files:</strong> ${folder.files.length}<br>`;
-                html += `<strong>Subfolders:</strong> ${folder.subfolders.length}<br>`;
-            }
-        }
-        fileInfoEl.innerHTML = html;
+    function selectScene(sceneName) {
+        const sceneData = PM.get_scene_file(sceneName);
+        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
+            <strong>Nodes:</strong> ${Object.keys(sceneData.nodes).length}`;
+        filePreviewEl.innerHTML = `<em>Preview unavailable (3D / UI not implemented yet)</em>`;
+    }
 
-        // Preview placeholder
-        if (item.type === "file" && item.extension.match(/(png|jpg|jpeg|gif)$/i)) {
-            const asset = graph.getAsset(item.path);
-            if (asset && asset.data) {
-                const blob = new Blob([asset.data]);
-                const url = URL.createObjectURL(blob);
-                filePreviewEl.innerHTML = `<img src="${url}" style="max-width:100%; max-height:100%;">`;
-            } else {
-                filePreviewEl.innerHTML = `<em>Image preview not available</em>`;
-            }
-        } else {
-            filePreviewEl.innerHTML = `<em>No preview</em>`;
-        }
+    function selectNode(sceneName, nodeName) {
+        const node = PM.get_scene_file(sceneName).nodes[nodeName];
+        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
+            <strong>Node:</strong> ${nodeName}<br>
+            <strong>Type:</strong> ${node.type}<br>
+            <strong>Children:</strong> ${node.children.join(", ") || "none"}<br>
+            <strong>Scripts:</strong> ${node.scripts.join(", ") || "none"}`;
+        filePreviewEl.innerHTML = `<em>Preview unavailable (3D / UI not implemented yet)</em>`;
     }
 
     // ------------------------------
-    // NLP Integration
+    // NLP Input Handler
     // ------------------------------
     async function sendNLPCommandGUI() {
         const cmd = nlpInput.value.trim();
@@ -117,14 +126,14 @@
         nlpInput.value = "";
 
         try {
-            const result = await window.ProjectManager.process_nlp_command(cmd);
+            const result = await interpretCommand(cmd);
             nlpLog.innerHTML += `${escapeHTML(result)}\n`;
         } catch (err) {
             nlpLog.innerHTML += `Error: ${escapeHTML(err.message)}\n`;
         }
 
         nlpLog.scrollTop = nlpLog.scrollHeight;
-        buildTree(); // Refresh tree after commands
+        buildTree();
     }
 
     nlpSend.addEventListener("click", sendNLPCommandGUI);
@@ -133,49 +142,12 @@
     });
 
     // ------------------------------
-    // ZIP Import
+    // Initialize console
     // ------------------------------
-    function addZipImportInput() {
-        const input = document.createElement("input");
-        input.type = "file";
-        input.accept = ".zip";
-        input.style.marginBottom = "0.5em";
-        document.getElementById("top-left").insertBefore(input, projectTreeEl);
+    nlpLog.innerHTML = "Welcome to Godot Game Assembler!\nWhat is the name of your game?\n";
 
-        input.addEventListener("change", async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const JSZipScript = document.createElement("script");
-            JSZipScript.src = "libs/jszip.min.js";
-            JSZipScript.onload = async () => {
-                const zip = await JSZip.loadAsync(file);
-                await processZip(zip);
-                buildTree();
-            };
-            document.body.appendChild(JSZipScript);
-        });
-    }
-
-    async function processZip(zip, parentFolder = null) {
-        for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-            const parts = relativePath.split("/");
-            const name = parts.pop();
-            const folderPath = parts.join("/");
-            if (zipEntry.dir) {
-                graph.addFolder(relativePath, parentFolder);
-            } else {
-                const data = await zipEntry.async("arraybuffer");
-                const extension = name.split(".").pop();
-                graph.addAsset(relativePath, "file", extension, folderPath || null, data);
-                if (folderPath && !graph.folders[folderPath]) graph.addFolder(folderPath, parentFolder);
-            }
-        }
-    }
-
-    addZipImportInput();
+    // Initial tree build
     buildTree();
 
-    console.log("Godot.js initialized with ZIP import and dynamic project tree.");
-
+    console.log("Godot interactive frontend loaded.");
 })();
