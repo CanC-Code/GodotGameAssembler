@@ -1,6 +1,6 @@
 // libs/project_manager.js
 // Author: CCVO
-// Purpose: Connect Godot Game Assembler UI to ProjectManager
+// Purpose: Connect Godot Game Assembler UI to ProjectManager with dynamic info panel
 
 (function () {
 
@@ -18,13 +18,18 @@
     const nlpSend = document.getElementById("nlp-send");
     const nlpLog = document.getElementById("nlp-log");
 
+    // Track selected scene / folder / asset
+    let selectedScene = null;
+    let selectedFolder = null;
+    let selectedAsset = null;
+
     // ------------------------------
     // Project Tree Rendering
     // ------------------------------
     function renderProjectTree() {
-        const scenes = pm.getScenes();
         projectTreeEl.innerHTML = "";
 
+        const scenes = pm.getScenes();
         if (scenes.length === 0) {
             projectTreeEl.innerHTML = "<em>No scenes</em>";
             return;
@@ -37,23 +42,109 @@
             sceneItem.addEventListener("click", () => selectScene(scene));
             projectTreeEl.appendChild(sceneItem);
         });
+
+        // Optionally, list folders
+        const folders = Object.keys(pm.graph?.folders || {});
+        folders.forEach(folderPath => {
+            const folder = pm.graph.folders[folderPath];
+            const folderItem = document.createElement("div");
+            folderItem.classList.add("tree-item");
+            folderItem.textContent = folder.name + "/";
+            folderItem.style.fontStyle = "italic";
+            folderItem.addEventListener("click", () => selectFolder(folderPath));
+            projectTreeEl.appendChild(folderItem);
+        });
+    }
+
+    // ------------------------------
+    // Selection Handling
+    // ------------------------------
+    function highlightSelected() {
+        Array.from(projectTreeEl.children).forEach(el => el.classList.remove("selected"));
+        Array.from(projectTreeEl.children).forEach(el => {
+            if (el.textContent === selectedScene ||
+                el.textContent.startsWith(pm.graph?.folders[selectedFolder]?.name + "/")) {
+                el.classList.add("selected");
+            }
+        });
     }
 
     function selectScene(sceneName) {
-        // Highlight selected
-        Array.from(projectTreeEl.children).forEach(el => el.classList.remove("selected"));
-        const selected = Array.from(projectTreeEl.children).find(el => el.textContent === sceneName);
-        if (selected) selected.classList.add("selected");
+        selectedScene = sceneName;
+        selectedFolder = null;
+        selectedAsset = null;
 
-        // Show info
-        const scene = pm.getSceneFile(sceneName);
-        if (!scene) return;
+        highlightSelected();
+        updateInfoPanel();
+    }
 
-        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
-            <strong>Nodes:</strong> ${Object.keys(scene.nodes).length}`;
+    function selectFolder(folderPath) {
+        selectedFolder = folderPath;
+        selectedScene = null;
+        selectedAsset = null;
 
-        // Preview placeholder (for now)
-        filePreviewEl.innerHTML = `<em>Scene preview not implemented yet.</em>`;
+        highlightSelected();
+        updateInfoPanel();
+    }
+
+    function selectAsset(assetPath) {
+        selectedAsset = assetPath;
+        selectedScene = null;
+        selectedFolder = null;
+
+        highlightSelected();
+        updateInfoPanel();
+    }
+
+    // ------------------------------
+    // Info Panel Updates
+    // ------------------------------
+    function updateInfoPanel() {
+        fileInfoEl.innerHTML = "";
+        filePreviewEl.innerHTML = "";
+
+        if (selectedScene) {
+            const scene = pm.getSceneFile(selectedScene);
+            if (!scene) return;
+
+            fileInfoEl.innerHTML = `<strong>Scene:</strong> ${selectedScene}<br>
+                <strong>Nodes:</strong> ${Object.keys(scene.nodes).length}`;
+
+            filePreviewEl.innerHTML = `<em>Scene preview not implemented yet.</em>`;
+        }
+
+        else if (selectedFolder) {
+            const contents = pm.graph.getFolderContents(selectedFolder);
+            const fileCount = contents.files.length;
+            const folderCount = contents.subfolders.length;
+
+            fileInfoEl.innerHTML = `<strong>Folder:</strong> ${selectedFolder}<br>
+                <strong>Files:</strong> ${fileCount}<br>
+                <strong>Subfolders:</strong> ${folderCount}`;
+
+            filePreviewEl.innerHTML = "<em>Folder preview not implemented yet.</em>";
+        }
+
+        else if (selectedAsset) {
+            const asset = pm.graph.getAsset(selectedAsset);
+            if (!asset) return;
+
+            fileInfoEl.innerHTML = `<strong>Asset:</strong> ${asset.name}<br>
+                <strong>Type:</strong> ${asset.type}<br>
+                <strong>Extension:</strong> ${asset.extension}<br>
+                <strong>Folder:</strong> ${asset.folder || "root"}`;
+
+            if (["jpg", "png", "jpeg", "gif"].includes(asset.extension.toLowerCase())) {
+                filePreviewEl.innerHTML = `<img src="${asset.data}" style="max-width:100%; max-height:100%;" />`;
+            } else {
+                filePreviewEl.innerHTML = `<em>Preview not available for this type.</em>`;
+            }
+        }
+
+        else {
+            fileInfoEl.innerHTML = "<em>No selection</em>";
+            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
+        }
     }
 
     // ------------------------------
@@ -70,8 +161,9 @@
             nlpLog.innerHTML += `${result}\n`;
             nlpLog.scrollTop = nlpLog.scrollHeight;
 
-            // After command, refresh project tree
+            // Refresh tree after changes
             renderProjectTree();
+            updateInfoPanel();
         } else {
             nlpLog.innerHTML += "ProjectManager not loaded.\n";
         }
@@ -86,5 +178,6 @@
     // Initial Rendering
     // ------------------------------
     renderProjectTree();
+    updateInfoPanel();
 
 })();
