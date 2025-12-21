@@ -1,38 +1,4 @@
-/* ---------- BODY & ROOT ---------- */
-body {
-  margin: 0;
-  height: 100vh;
-  background: #1e1e1e;
-  color: #f0f0f0;
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-}
-
-header {
-  background: #282c34;
-  padding: 0.75em;
-  text-align: center;
-  font-size: 1.4em;
-  border-bottom: 1px solid #333;
-}
-
-#app-root {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* ---------- TOP / BOTTOM SPLIT ---------- */
-#top-area {
-  flex: 0 0 65%;
-  display: flex;
-  padding: 1em;
-  gap: 1em;
-  overflow: hidden;
-}
-
+/* ---------- NLP ---------- */
 #bottom-area {
   flex: 0 0 35%;
   margin: 0 1em 1em 1em;
@@ -42,89 +8,12 @@ header {
   overflow: hidden;
 }
 
-/* ---------- TOP LEFT / RIGHT ---------- */
-#top-left {
-  width: 300px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-}
-
-#top-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-/* ---------- PANELS ---------- */
-.panel {
-  background: #2b2b2b;
-  border-radius: 8px;
-  padding: 0.75em;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5em;
-}
-
-.panel-title {
-  font-weight: bold;
-  border-bottom: 1px solid #444;
-  padding-bottom: 0.25em;
-}
-
-/* ---------- PROJECT TREE ---------- */
-#project-tree {
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-.tree-item {
-  padding: 4px;
-  cursor: pointer;
-}
-
-.tree-item:hover {
-  background: #3a3a3a;
-}
-
-.tree-item.selected {
-  background: #4a90e2;
-}
-
-/* ---------- FILE INFO / PREVIEW ---------- */
-#file-info {
-  min-height: 100px;
-  border-bottom: 1px solid #444;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-#file-preview {
-  flex: 1;
-  overflow: auto;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-/* ---------- NLP ---------- */
-#nlp-log {
-  flex: 1;
-  background: #1b1b1b;
-  padding: 0.5em;
-  border-radius: 4px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
 .nlp-input-row {
   display: flex;
   gap: 0.5em;
 }
 
-input {
+#nlp-command {
   flex: 1;
   padding: 0.5em;
   border-radius: 4px;
@@ -134,7 +23,7 @@ input {
   font-family: monospace;
 }
 
-button {
+#nlp-send {
   padding: 0.5em 1em;
   border: none;
   border-radius: 4px;
@@ -143,6 +32,16 @@ button {
   cursor: pointer;
 }
 
-button:hover {
+#nlp-send:hover {
   background: #357ab8;
+}
+
+#nlp-log {
+  flex: 1;
+  background: #1b1b1b;
+  padding: 0.5em;
+  border-radius: 4px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.9em;
 }
