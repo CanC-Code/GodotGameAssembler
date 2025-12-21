@@ -1,6 +1,7 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Dynamic UI bridge between ProjectManager + NLP + Project tree + File info + Placeholder viewport
+// Purpose: Fully dynamic UI bridge for GodotGameAssembler
+// Top-left: Project tree, top-right: info + preview, bottom: NLP
 
 (function () {
 
@@ -90,7 +91,7 @@
             }
         });
 
-        // Render folders
+        // Render folders and assets if ProjectManager has graph.folders
         const graph = ProjectManager.graph || ProjectManager;
         if (graph.folders) {
             Object.keys(graph.folders).forEach(folderPath => {
@@ -115,7 +116,7 @@
     }
 
     // ------------------------------
-    // INFO / PREVIEW
+    // INFO / PREVIEW PANEL
     // ------------------------------
     function showPlaceholder() {
         fileInfoEl.innerHTML = "<em>No file selected</em>";
@@ -144,7 +145,8 @@
     }
 
     function showFolderInfo(folderPath) {
-        const folder = ProjectManager.graph.getFolderContents(folderPath);
+        const graph = ProjectManager.graph || ProjectManager;
+        const folder = graph.getFolderContents(folderPath);
         if (!folder) return showPlaceholder();
 
         fileInfoEl.innerHTML =
@@ -166,8 +168,11 @@
             `<strong>Extension:</strong> ${asset.extension}<br>` +
             `<strong>Folder:</strong> ${asset.folder || "(none)"}`;
 
-        if (asset.extension.match(/\.(jpg|png|jpeg)$/i) && asset.data) {
+        // Display image preview or placeholder for 3D models
+        if (asset.extension.match(/\.(jpg|jpeg|png)$/i) && asset.data) {
             filePreviewEl.innerHTML = `<img src="${asset.data}" style="max-width:100%; max-height:100%;">`;
+        } else if (asset.extension.match(/\.(gltf|glb|vox)$/i)) {
+            filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">3D Model Placeholder</div>`;
         } else {
             showPlaceholder();
         }
