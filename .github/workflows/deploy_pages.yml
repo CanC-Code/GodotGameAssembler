@@ -3,16 +3,18 @@ name: Deploy GodotGameAssembler Pages
 on:
   push:
     branches:
-      - main  # Trigger when main branch is updated
+      - main  # Trigger on main branch updates
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout main branch
+      # 1. Checkout main branch with full history
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       # 2. Configure Git
       - name: Set up Git
@@ -32,9 +34,9 @@ jobs:
           rm -rf index.html libs godot.js || true
 
       # 5. Copy interface files from main branch
-      - name: Copy interface files
+      - name: Copy interface files from main
         run: |
-          cp -r index.html libs godot.js ./
+          git checkout main -- index.html libs godot.js
 
       # 6. Commit changes
       - name: Commit changes
