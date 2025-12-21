@@ -3,7 +3,11 @@ name: Deploy GodotGameAssembler Pages
 on:
   push:
     branches:
-      - main  # Trigger when main branch is updated
+      - main  # Trigger on main branch updates
+
+# Required for private repos to allow pushing
+permissions:
+  contents: write
 
 jobs:
   deploy:
