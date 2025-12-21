@@ -1,5 +1,5 @@
 // project_manager.gd
-// Handles scenes, nodes, scripts, assets, and NLP commands
+// Handles scenes, nodes, scripts, assets, and NLP commands with NLP_PRO integration
 
 const ProjectManager = {
   scenes: {},
@@ -55,50 +55,49 @@ const ProjectManager = {
   },
 
   // --- NLP Command Handling ---
-  process_nlp_command: function(command){
-    command = command.toLowerCase();
+  process_nlp_command: async function(command){
+    appendNLP(`> ${command}`);
 
-    // Example: create a new scene
-    if(command.startsWith("create scene ")){
-      const name = command.replace("create scene ","").trim();
-      return this.add_scene(name);
-    }
+    if(typeof NLP_PRO === "undefined") return "NLP_PRO not loaded.";
 
-    // Example: add node
-    if(command.startsWith("add node ")){
-      // Format: add node <name> as <type> to <scene>
-      const regex = /add node (\S+) as (\S+) to (\S+)/;
-      const match = command.match(regex);
-      if(match){
-        const [, nodeName, nodeType, sceneName] = match;
-        return this.add_node(sceneName, nodeName, nodeType);
+    try {
+      // Get structured plan from NLP
+      const plan = await NLP_PRO.process(command);
+
+      if(!plan || plan.length === 0) return "Could not parse command.";
+
+      let response = "";
+
+      // Execute each plan step
+      for(let step of plan){
+        switch(step.action){
+          case "create_scene":
+            response += this.add_scene(step.name) + "\n";
+            break;
+          case "add_node":
+            response += this.add_node(step.scene, step.name, step.type, step.parent || "") + "\n";
+            break;
+          case "add_script":
+            response += this.add_script(step.scene, step.name, step.code || "# Your code here\n") + "\n";
+            break;
+          case "upload_asset":
+            response += "Use GUI to upload assets: " + step.name + "\n";
+            break;
+          case "generate_project":
+            await generateProjectGUI();
+            response += "Project ZIP generated.\n";
+            break;
+          default:
+            response += `Unknown action: ${step.action}\n`;
+        }
       }
-      return "Invalid add node syntax. Use: add node <name> as <type> to <scene>";
-    }
 
-    // Example: add script
-    if(command.startsWith("add script ")){
-      // Format: add script <scriptName> to <scene>
-      const regex = /add script (\S+) to (\S+)/;
-      const match = command.match(regex);
-      if(match){
-        const [, scriptName, sceneName] = match;
-        return this.add_script(sceneName, scriptName, "# Your code here\n");
-      }
-      return "Invalid add script syntax. Use: add script <name> to <scene>";
-    }
+      appendNLP(response);
+      return response;
 
-    // Example: upload asset (stub)
-    if(command.startsWith("upload asset ")){
-      return "Use GUI to upload assets in browser.";
+    } catch(e){
+      console.error("NLP Error:", e);
+      return "Error processing NLP command.";
     }
-
-    // Example: generate project
-    if(command.startsWith("generate project")){
-      generateProjectGUI(); // Calls the HTML function
-      return "Generating project ZIP...";
-    }
-
-    return "Unknown command. Try: 'create scene <name>', 'add node <name> as <type> to <scene>', 'add script <name> to <scene>'";
   }
 };
