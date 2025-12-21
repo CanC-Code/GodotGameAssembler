@@ -1,130 +1,150 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Hybrid NLP chat + command interface for Godot Game Assembler
-// Integrated with ProjectManager, ProjectGraph, assets, and file/folder views
+// Purpose: Connect ProjectManager + UI with dynamic top-right panel, NLP, and project tree
 
 (function () {
 
-    if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
-    if (!window.ProjectGraph) throw new Error("ProjectGraph not loaded");
+  if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
 
-    // ------------------------------
-    // DOM Elements
-    // ------------------------------
-    const projectTreeEl = document.getElementById("project-tree");
-    const fileInfoEl = document.getElementById("file-info");
-    const filePreviewEl = document.getElementById("file-preview");
-    const nlpInput = document.getElementById("nlp-command");
-    const nlpSend = document.getElementById("nlp-send");
-    const nlpLog = document.getElementById("nlp-log");
+  const projectTree = document.getElementById("project-tree");
+  const fileInfo = document.getElementById("file-info");
+  const filePreview = document.getElementById("file-preview");
 
-    // ------------------------------
-    // Utilities
-    // ------------------------------
-    function appendLog(message, type = "system") {
-        const div = document.createElement("div");
-        div.className = `chat-message ${type}`;
-        div.textContent = message;
-        nlpLog.appendChild(div);
-        nlpLog.scrollTop = nlpLog.scrollHeight;
+  let selectedItem = null;
+
+  // -----------------------------
+  // Utility: clear panel
+  // -----------------------------
+  function clearPanel() {
+    fileInfo.innerHTML = "<em>No file selected</em>";
+    filePreview.innerHTML = "<em>Preview will appear here</em>";
+  }
+
+  // -----------------------------
+  // Render project tree
+  // -----------------------------
+  function renderTree() {
+    projectTree.innerHTML = "";
+
+    const scenes = ProjectManager.get_scenes();
+
+    if (!scenes.length) {
+      projectTree.innerHTML = "<em>No scenes</em>";
+      return;
     }
 
-    function refreshProjectTree() {
-        const scenes = ProjectManager.get_scenes();
-        projectTreeEl.innerHTML = "";
+    scenes.forEach(sceneName => {
+      const sceneDiv = document.createElement("div");
+      sceneDiv.textContent = sceneName;
+      sceneDiv.classList.add("tree-item");
+      sceneDiv.dataset.type = "scene";
+      sceneDiv.dataset.name = sceneName;
 
-        if (!scenes.length) {
-            projectTreeEl.innerHTML = "<em>No scenes</em>";
-            return;
-        }
+      // Click handler
+      sceneDiv.addEventListener("click", () => selectItem(sceneDiv));
 
-        scenes.forEach(sceneName => {
-            const sceneEl = document.createElement("div");
-            sceneEl.className = "tree-item";
-            sceneEl.textContent = sceneName;
-            sceneEl.onclick = () => displaySceneInfo(sceneName);
-            projectTreeEl.appendChild(sceneEl);
+      // Node children
+      const sceneData = ProjectManager.get_scene_file(sceneName);
+      if (sceneData && sceneData.nodes) {
+        const nodesContainer = document.createElement("div");
+        nodesContainer.style.paddingLeft = "16px";
+
+        Object.keys(sceneData.nodes).forEach(nodeName => {
+          const nodeDiv = document.createElement("div");
+          nodeDiv.textContent = nodeName;
+          nodeDiv.classList.add("tree-item");
+          nodeDiv.dataset.type = "node";
+          nodeDiv.dataset.scene = sceneName;
+          nodeDiv.dataset.name = nodeName;
+
+          nodeDiv.addEventListener("click", () => selectItem(nodeDiv));
+          nodesContainer.appendChild(nodeDiv);
         });
-    }
 
-    function displaySceneInfo(sceneName) {
-        const scene = ProjectManager.get_scene_file(sceneName);
-        if (!scene) return;
+        sceneDiv.appendChild(nodesContainer);
+      }
 
-        fileInfoEl.innerHTML = `Scene: ${sceneName}\nNodes: ${Object.keys(scene.nodes).length}`;
-        filePreviewEl.innerHTML = `<em>Scene preview placeholder</em>`;
-    }
-
-    // ------------------------------
-    // NLP Chat / Command Handler
-    // ------------------------------
-    async function processNLPInput(input) {
-        if (!input) return;
-
-        appendLog(`> ${input}`, "user");
-
-        if (!ProjectManager) {
-            appendLog("ProjectManager not loaded.", "system");
-            return;
-        }
-
-        // Detect if input is a known command
-        const commandRegex = /^(create|add|attach|list|export)\b/i;
-        if (commandRegex.test(input)) {
-            // Process as command
-            try {
-                const result = await ProjectManager.process_nlp_command(input);
-                appendLog(result, "command");
-                refreshProjectTree();
-            } catch (err) {
-                appendLog(`Command error: ${err.message}`, "system");
-            }
-        } else {
-            // Process as chat / game conversation
-            const chatResponse = generateChatResponse(input);
-            appendLog(chatResponse, "system");
-        }
-    }
-
-    // ------------------------------
-    // Simple Chat / Game Brainstorm Engine
-    // ------------------------------
-    function generateChatResponse(input) {
-        input = input.toLowerCase();
-
-        if (input.includes("name") && input.includes("game")) {
-            return "Suggested name: 'Galactic Pioneers'. You can create a main scene using 'create scene MainScene'.";
-        }
-
-        if (input.includes("idea") || input.includes("concept")) {
-            return "Idea: A voxel-based space exploration game. Start by creating a 'MainScene' and adding a Player node.";
-        }
-
-        if (input.includes("build") || input.includes("start")) {
-            return "You can add a scene using 'create scene <SceneName>' and then add nodes and scripts.";
-        }
-
-        return "Let's keep brainstorming! Ask me to name your game, expand its concept, or create a scene.";
-    }
-
-    // ------------------------------
-    // Event Listeners
-    // ------------------------------
-    nlpSend.addEventListener("click", () => processNLPInput(nlpInput.value.trim()));
-    nlpInput.addEventListener("keydown", e => {
-        if (e.key === "Enter" && !e.shiftKey) {
-            e.preventDefault();
-            processNLPInput(nlpInput.value.trim());
-            nlpInput.value = "";
-        }
+      projectTree.appendChild(sceneDiv);
     });
 
-    // ------------------------------
-    // Initial Setup
-    // ------------------------------
-    refreshProjectTree();
-    appendLog("NLP interface ready. Type 'help' for commands or start chatting about your game.", "system");
+    // TODO: Render folders/files from ProjectManager if needed
+  }
 
-    console.log("Godot.js loaded: NLP + command interface initialized.");
+  // -----------------------------
+  // Select item handler
+  // -----------------------------
+  function selectItem(div) {
+    if (selectedItem) selectedItem.classList.remove("selected");
+    selectedItem = div;
+    selectedItem.classList.add("selected");
+
+    const type = div.dataset.type;
+
+    if (type === "scene") {
+      const scene = ProjectManager.get_scene_file(div.dataset.name);
+      if (!scene) return clearPanel();
+
+      let html = `<strong>Scene:</strong> ${div.dataset.name}<br>`;
+      const nodes = Object.keys(scene.nodes || {});
+      html += `<strong>Nodes:</strong> ${nodes.length}<br>`;
+      html += nodes.length ? `<ul>${nodes.map(n => `<li>${n}</li>`).join("")}</ul>` : "";
+
+      fileInfo.innerHTML = html;
+      filePreview.innerHTML = "<em>Scene preview not available</em>";
+
+    } else if (type === "node") {
+      const sceneName = div.dataset.scene;
+      const nodeName = div.dataset.name;
+      const node = ProjectManager.get_scene_file(sceneName)?.nodes[nodeName];
+      if (!node) return clearPanel();
+
+      let html = `<strong>Node:</strong> ${nodeName}<br>`;
+      html += `<strong>Type:</strong> ${node.type}<br>`;
+      html += `<strong>Parent:</strong> ${node.parent || "None"}<br>`;
+      html += `<strong>Children:</strong> ${node.children.length}<br>`;
+      html += node.children.length ? `<ul>${node.children.map(c => `<li>${c}</li>`).join("")}</ul>` : "";
+      html += `<strong>Scripts:</strong> ${node.scripts.length}<br>`;
+      html += node.scripts.length ? `<ul>${node.scripts.map(s => `<li>${s}</li>`).join("")}</ul>` : "";
+
+      fileInfo.innerHTML = html;
+      filePreview.innerHTML = "<em>Node preview not available</em>";
+    }
+
+    // Future: folders/files preview handling
+  }
+
+  // -----------------------------
+  // NLP Logging Helper
+  // -----------------------------
+  const nlpLog = document.getElementById("nlp-log");
+  const nlpInput = document.getElementById("nlp-command");
+  const nlpSend = document.getElementById("nlp-send");
+
+  async function sendNLPCommandGUI() {
+    const cmd = nlpInput.value.trim();
+    if (!cmd) return;
+    nlpLog.innerHTML += `<div class="chat-message user">&gt; ${cmd}</div>`;
+    nlpInput.value = "";
+
+    if (window.ProjectManager) {
+      const result = await ProjectManager.process_nlp_command(cmd);
+      nlpLog.innerHTML += `<div class="chat-message system">${result}</div>`;
+      nlpLog.scrollTop = nlpLog.scrollHeight;
+
+      // Refresh tree after potential changes
+      renderTree();
+    } else {
+      nlpLog.innerHTML += `<div class="chat-message system">ProjectManager not loaded.</div>`;
+    }
+  }
+
+  nlpSend.addEventListener("click", sendNLPCommandGUI);
+  nlpInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") sendNLPCommandGUI();
+  });
+
+  // Initial render
+  renderTree();
+  clearPanel();
 
 })();
