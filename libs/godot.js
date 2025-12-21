@@ -1,186 +1,142 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Fully dynamic UI bridge for GodotGameAssembler
-// Top-left: Project tree, top-right: info + preview, bottom: NLP
+// Purpose: Dynamic UI binding for GodotGameAssembler
 
 (function () {
-
-    if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
 
     const projectTreeEl = document.getElementById("project-tree");
     const fileInfoEl = document.getElementById("file-info");
     const filePreviewEl = document.getElementById("file-preview");
-    const nlpInput = document.getElementById("nlp-command");
-    const nlpSend = document.getElementById("nlp-send");
-    const nlpLog = document.getElementById("nlp-log");
 
-    // ------------------------------
-    // NLP GUI
-    // ------------------------------
-    async function sendNLPCommandGUI() {
-        const cmd = nlpInput.value.trim();
-        if (!cmd) return;
-        nlpLog.innerHTML += `> ${cmd}\n`;
-        nlpInput.value = "";
-
-        if (window.ProjectManager) {
-            const result = await ProjectManager.process_nlp_command(cmd);
-            nlpLog.innerHTML += `${result}\n`;
-            nlpLog.scrollTop = nlpLog.scrollHeight;
-            renderProjectTree();
-        } else {
-            nlpLog.innerHTML += "ProjectManager not loaded.\n";
-        }
+    if (!window.ProjectManager) {
+        console.error("ProjectManager not loaded.");
+        return;
     }
 
-    nlpSend.addEventListener("click", sendNLPCommandGUI);
-    nlpInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") sendNLPCommandGUI();
-    });
+    const pm = window.ProjectManager;
 
-    // ------------------------------
-    // PROJECT TREE
-    // ------------------------------
-    function createTreeItem(name, type, parentEl, clickHandler) {
-        const el = document.createElement("div");
-        el.textContent = name;
-        el.classList.add("tree-item");
-        el.dataset.type = type;
-
-        el.addEventListener("click", (e) => {
-            e.stopPropagation();
-            document.querySelectorAll(".tree-item.selected").forEach(s => s.classList.remove("selected"));
-            el.classList.add("selected");
-            if (clickHandler) clickHandler(name, type);
-        });
-
-        parentEl.appendChild(el);
-        return el;
-    }
-
+    // ----------------------------
+    // Helper: Render project tree
+    // ----------------------------
     function renderProjectTree() {
         projectTreeEl.innerHTML = "";
 
-        const scenes = ProjectManager.get_scenes();
-        if (scenes.length === 0) {
-            projectTreeEl.innerHTML = "<em>No scenes</em>";
-            showPlaceholder();
-            return;
+        // Scenes
+        const scenes = pm.get_scenes();
+        if (scenes.length) {
+            const sceneHeader = document.createElement("div");
+            sceneHeader.textContent = "Scenes:";
+            sceneHeader.style.fontWeight = "bold";
+            projectTreeEl.appendChild(sceneHeader);
+
+            scenes.forEach(sceneName => {
+                const item = document.createElement("div");
+                item.classList.add("tree-item");
+                item.textContent = sceneName + ".tcsn";
+                item.dataset.type = "scene";
+                item.dataset.name = sceneName;
+                projectTreeEl.appendChild(item);
+            });
         }
 
-        // Render scenes
-        scenes.forEach(sceneName => {
-            const sceneEl = createTreeItem(sceneName, "scene", projectTreeEl, () => {
-                showSceneInfo(sceneName);
+        // Folders
+        const folders = Object.keys(pm.graph.folders || {});
+        if (folders.length) {
+            const folderHeader = document.createElement("div");
+            folderHeader.textContent = "Folders:";
+            folderHeader.style.fontWeight = "bold";
+            projectTreeEl.appendChild(folderHeader);
+
+            folders.forEach(folderPath => {
+                const folder = pm.graph.folders[folderPath];
+                const item = document.createElement("div");
+                item.classList.add("tree-item");
+                item.textContent = folder.name + "/";
+                item.dataset.type = "folder";
+                item.dataset.name = folderPath;
+                projectTreeEl.appendChild(item);
             });
+        }
 
-            const sceneObj = ProjectManager.get_scene_file(sceneName) || { nodes: {} };
-            const nodes = sceneObj.nodes || {};
+        // Assets
+        const assets = Object.keys(pm.graph.assets || {});
+        if (assets.length) {
+            const assetHeader = document.createElement("div");
+            assetHeader.textContent = "Assets:";
+            assetHeader.style.fontWeight = "bold";
+            projectTreeEl.appendChild(assetHeader);
 
-            if (Object.keys(nodes).length > 0) {
-                const nodeContainer = document.createElement("div");
-                nodeContainer.style.paddingLeft = "1em";
-                sceneEl.appendChild(nodeContainer);
+            assets.forEach(assetPath => {
+                const asset = pm.graph.assets[assetPath];
+                const item = document.createElement("div");
+                item.classList.add("tree-item");
+                item.textContent = asset.name;
+                item.dataset.type = "asset";
+                item.dataset.name = assetPath;
+                projectTreeEl.appendChild(item);
+            });
+        }
+    }
 
-                Object.keys(nodes).forEach(nodeName => {
-                    const node = nodes[nodeName];
-                    createTreeItem(nodeName + ` (${node.type})`, "node", nodeContainer, () => {
-                        showNodeInfo(sceneName, nodeName);
-                    });
-                });
+    // ----------------------------
+    // Helper: Display file/folder info
+    // ----------------------------
+    function displaySelection(type, name) {
+        fileInfoEl.innerHTML = "";
+        filePreviewEl.innerHTML = "";
+
+        if (type === "scene") {
+            const content = pm.graph.generateSceneFile(name);
+            fileInfoEl.textContent = content || "Scene empty.";
+            filePreviewEl.innerHTML = "<em>3D viewport / scene preview placeholder</em>";
+        } else if (type === "folder") {
+            const folder = pm.graph.folders[name];
+            if (!folder) return;
+            const counts = `Files: ${folder.files.length}, Subfolders: ${folder.subfolders.length}`;
+            fileInfoEl.textContent = `Folder: ${folder.name}\n${counts}`;
+            filePreviewEl.innerHTML = "<em>Folder preview placeholder</em>";
+        } else if (type === "asset") {
+            const asset = pm.graph.assets[name];
+            if (!asset) return;
+            let info = `Name: ${asset.name}\nType: ${asset.type}\nExtension: ${asset.extension}`;
+            fileInfoEl.textContent = info;
+
+            if (asset.type === "image") {
+                const img = document.createElement("img");
+                img.src = asset.data || "";
+                img.style.maxWidth = "100%";
+                img.style.maxHeight = "100%";
+                filePreviewEl.appendChild(img);
+            } else if (asset.type === "model") {
+                filePreviewEl.innerHTML = "<em>3D model preview placeholder</em>";
+            } else {
+                filePreviewEl.innerHTML = "<em>Preview not available</em>";
             }
-        });
-
-        // Render folders and assets if ProjectManager has graph.folders
-        const graph = ProjectManager.graph || ProjectManager;
-        if (graph.folders) {
-            Object.keys(graph.folders).forEach(folderPath => {
-                const folder = graph.folders[folderPath];
-                const folderEl = createTreeItem(folder.name + ` (Folder, ${folder.files.length} files)`, "folder", projectTreeEl, () => {
-                    showFolderInfo(folderPath);
-                });
-
-                const folderContainer = document.createElement("div");
-                folderContainer.style.paddingLeft = "1em";
-                folderEl.appendChild(folderContainer);
-
-                folder.files.forEach(filePath => {
-                    const asset = graph.assets[filePath];
-                    if (!asset) return;
-                    createTreeItem(asset.name + ` (${asset.extension})`, "file", folderContainer, () => {
-                        showFileInfo(filePath);
-                    });
-                });
-            });
         }
     }
 
-    // ------------------------------
-    // INFO / PREVIEW PANEL
-    // ------------------------------
-    function showPlaceholder() {
-        fileInfoEl.innerHTML = "<em>No file selected</em>";
-        filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
-    }
+    // ----------------------------
+    // Event delegation for tree clicks
+    // ----------------------------
+    projectTreeEl.addEventListener("click", (e) => {
+        const item = e.target.closest(".tree-item");
+        if (!item) return;
 
-    function showSceneInfo(sceneName) {
-        const scene = ProjectManager.get_scene_file(sceneName);
-        if (!scene) return showPlaceholder();
+        // Highlight
+        projectTreeEl.querySelectorAll(".tree-item").forEach(i => i.classList.remove("selected"));
+        item.classList.add("selected");
 
-        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>Nodes: ${Object.keys(scene.nodes || {}).length}`;
-        showPlaceholder();
-    }
+        displaySelection(item.dataset.type, item.dataset.name);
+    });
 
-    function showNodeInfo(sceneName, nodeName) {
-        const node = ProjectManager.getNode(sceneName, nodeName);
-        if (!node) return showSceneInfo(sceneName);
-
-        fileInfoEl.innerHTML =
-            `<strong>Node:</strong> ${nodeName}<br>` +
-            `<strong>Type:</strong> ${node.type}<br>` +
-            `<strong>Parent:</strong> ${node.parent || "(none)"}<br>` +
-            `<strong>Scripts:</strong> ${node.scripts.join(", ") || "(none)"}`;
-
-        showPlaceholder();
-    }
-
-    function showFolderInfo(folderPath) {
-        const graph = ProjectManager.graph || ProjectManager;
-        const folder = graph.getFolderContents(folderPath);
-        if (!folder) return showPlaceholder();
-
-        fileInfoEl.innerHTML =
-            `<strong>Folder:</strong> ${folderPath}<br>` +
-            `<strong>Files:</strong> ${folder.files.length}<br>` +
-            `<strong>Subfolders:</strong> ${folder.subfolders?.length || 0}`;
-
-        showPlaceholder();
-    }
-
-    function showFileInfo(filePath) {
-        const graph = ProjectManager.graph || ProjectManager;
-        const asset = graph.getAsset(filePath);
-        if (!asset) return showPlaceholder();
-
-        fileInfoEl.innerHTML =
-            `<strong>File:</strong> ${asset.name}<br>` +
-            `<strong>Type:</strong> ${asset.type}<br>` +
-            `<strong>Extension:</strong> ${asset.extension}<br>` +
-            `<strong>Folder:</strong> ${asset.folder || "(none)"}`;
-
-        // Display image preview or placeholder for 3D models
-        if (asset.extension.match(/\.(jpg|jpeg|png)$/i) && asset.data) {
-            filePreviewEl.innerHTML = `<img src="${asset.data}" style="max-width:100%; max-height:100%;">`;
-        } else if (asset.extension.match(/\.(gltf|glb|vox)$/i)) {
-            filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">3D Model Placeholder</div>`;
-        } else {
-            showPlaceholder();
-        }
-    }
-
-    // ------------------------------
-    // INITIAL RENDER
-    // ------------------------------
+    // ----------------------------
+    // Initial render
+    // ----------------------------
     renderProjectTree();
+
+    // ----------------------------
+    // Expose re-render function for updates
+    // ----------------------------
+    window.refreshProjectTree = renderProjectTree;
 
 })();
