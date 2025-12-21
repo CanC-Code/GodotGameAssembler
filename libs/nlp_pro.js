@@ -1,7 +1,6 @@
 // libs/nlp_pro.js
 // Author: CCVO
-// Purpose: Lightweight NLP command interpreter for ProjectManager
-// Not an LLM — deterministic, inspectable, safe
+// Purpose: Enhanced NLP command interpreter for chat-driven Godot project building
 
 (function () {
 
@@ -13,50 +12,93 @@
             const text = input.trim();
 
             // -----------------------------
+            // HELP
+            // -----------------------------
+            if (/^help/i.test(text)) {
+                return `Commands:
+- name game "<Name>"
+- set concept "<Text>"
+- create scene <Name>
+- add node <Name> <Type> to <Scene>
+- attach script <Script> to <Node> in <Scene>
+- add button <Name> to <Scene> [position]
+- link button <Name> to scene <Scene>
+- add thumbstick to <Scene>
+- list scenes
+- export project <Name>`;
+            }
+
+            // -----------------------------
+            // NAME GAME
+            // -----------------------------
+            let m = text.match(/^name\s+game\s+"(.+)"$/i);
+            if (m) {
+                pm.gameName = m[1];
+                return `Game named: ${pm.gameName}`;
+            }
+
+            // -----------------------------
+            // SET CONCEPT
+            // -----------------------------
+            m = text.match(/^set\s+concept\s+"(.+)"$/i);
+            if (m) {
+                pm.gameConcept = m[1];
+                return `Game concept set: ${pm.gameConcept}`;
+            }
+
+            // -----------------------------
             // CREATE SCENE
             // -----------------------------
-            // "create scene Main"
-            let m = text.match(/^create\s+scene\s+(\w+)/i);
+            m = text.match(/^create\s+scene\s+(\w+)/i);
             if (m) {
-                return pm.add_scene(m[1]);
+                const name = m[1];
+                const res = pm.add_scene(name);
+                return res.includes("created") ? `Scene '${name}' created` : res;
             }
 
             // -----------------------------
             // ADD NODE
             // -----------------------------
-            // "add node Player Node2D to Main"
-            m = text.match(
-                /^add\s+node\s+(\w+)\s+(\w+)\s+to\s+(\w+)(?:\s+under\s+(\w+))?/i
-            );
+            m = text.match(/^add\s+node\s+(\w+)\s+(\w+)\s+to\s+(\w+)/i);
             if (m) {
-                const [, node, type, scene, parent] = m;
-                return pm.add_node(scene, node, type, parent || "");
-            }
-
-            // -----------------------------
-            // ADD SCRIPT
-            // -----------------------------
-            // "add script Move to Main"
-            m = text.match(/^add\s+script\s+(\w+)\s+to\s+(\w+)/i);
-            if (m) {
-                const code =
-`extends Node
-
-func _ready():
-    print("Script ready")`;
-                return pm.add_script(m[2], m[1], code);
+                const [, node, type, scene] = m;
+                return pm.add_node(scene, node, type);
             }
 
             // -----------------------------
             // ATTACH SCRIPT
             // -----------------------------
-            // "attach script Move to Player in Main"
-            m = text.match(
-                /^attach\s+script\s+(\w+)\s+to\s+(\w+)\s+in\s+(\w+)/i
-            );
+            m = text.match(/^attach\s+script\s+(\w+)\s+to\s+(\w+)\s+in\s+(\w+)/i);
             if (m) {
                 const [, script, node, scene] = m;
                 return pm.attach_script(scene, node, script);
+            }
+
+            // -----------------------------
+            // ADD BUTTON
+            // -----------------------------
+            m = text.match(/^add\s+button\s+"?(\w+)"?\s+to\s+(\w+)(?:\s+(\w+))?/i);
+            if (m) {
+                const [, name, scene, position] = m;
+                return pm.addUIElement(scene, name, "Button", position);
+            }
+
+            // -----------------------------
+            // LINK BUTTON TO SCENE
+            // -----------------------------
+            m = text.match(/^link\s+button\s+"?(\w+)"?\s+to\s+scene\s+(\w+)/i);
+            if (m) {
+                const [, btnName, targetScene] = m;
+                return pm.linkButtonToScene(btnName, targetScene);
+            }
+
+            // -----------------------------
+            // ADD THUMBSTICK
+            // -----------------------------
+            m = text.match(/^add\s+thumbstick\s+to\s+(\w+)/i);
+            if (m) {
+                const [, scene] = m;
+                return pm.createThumbstick(scene);
             }
 
             // -----------------------------
@@ -64,15 +106,12 @@ func _ready():
             // -----------------------------
             if (/^list\s+scenes/i.test(text)) {
                 const scenes = pm.get_scenes();
-                return scenes.length
-                    ? "Scenes:\n- " + scenes.join("\n- ")
-                    : "No scenes created.";
+                return scenes.length ? "Scenes:\n- " + scenes.join("\n- ") : "No scenes created.";
             }
 
             // -----------------------------
             // EXPORT PROJECT
             // -----------------------------
-            // "export project"
             m = text.match(/^export\s+project(?:\s+(\w+))?/i);
             if (m) {
                 const name = m[1] || "GodotProject";
@@ -81,30 +120,14 @@ func _ready():
             }
 
             // -----------------------------
-            // HELP
-            // -----------------------------
-            if (/^help/i.test(text)) {
-                return (
-`Commands:
-- create scene <Name>
-- add node <Name> <Type> to <Scene>
-- add script <Name> to <Scene>
-- attach script <Script> to <Node> in <Scene>
-- list scenes
-- export project <Name>`
-                );
-            }
-
-            // -----------------------------
             // FALLBACK
             // -----------------------------
             return "Unrecognized command. Type 'help'.";
-
         }
+
     };
 
     window.NLP_PRO = NLP_PRO;
-
     console.log("NLP_PRO loaded.");
 
 })();
