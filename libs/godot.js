@@ -1,103 +1,181 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Integrates ProjectManager with GUI and NLP for GodotGameAssembler
+// Purpose: Godot Game Assembler core GUI + NLP + ProjectGraph integration
+// Handles project tree, file info, ZIP import, and NLP interface
 
 (function () {
 
+    if (!window.ProjectGraph) throw new Error("ProjectGraph not loaded");
+    if (!window.AssetHandler) throw new Error("AssetHandler not loaded");
+    if (!window.SceneComposer) throw new Error("SceneComposer not loaded");
+    if (!window.ZipExporter) throw new Error("ZipExporter not loaded");
     if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
+    if (!window.NLP_PRO) throw new Error("NLP_PRO not loaded");
 
-    const projectTree = document.getElementById("project-tree");
-    const fileInfo = document.getElementById("file-info");
-    const filePreview = document.getElementById("file-preview");
+    // ------------------------------
+    // Core Instances
+    // ------------------------------
+    const graph = new ProjectGraph();
+    const assets = new AssetHandler();
+    const composer = new SceneComposer(graph);
+    const exporter = new ZipExporter(graph, composer, assets);
+    const nlp = window.NLP_PRO;
+
+    // ------------------------------
+    // DOM References
+    // ------------------------------
+    const projectTreeEl = document.getElementById("project-tree");
+    const fileInfoEl = document.getElementById("file-info");
+    const filePreviewEl = document.getElementById("file-preview");
     const nlpLog = document.getElementById("nlp-log");
     const nlpInput = document.getElementById("nlp-command");
     const nlpSend = document.getElementById("nlp-send");
 
-    let selectedItem = null;
+    // ------------------------------
+    // Helpers
+    // ------------------------------
+    function escapeHTML(str) {
+        return str.replace(/&/g, "&amp;")
+                  .replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+    }
 
-    // -------------------------------
+    // ------------------------------
     // Project Tree Rendering
-    // -------------------------------
-    function renderProjectTree() {
-        const scenes = ProjectManager.get_scenes();
-        projectTree.innerHTML = "";
-
-        if (scenes.length === 0) {
-            projectTree.innerHTML = "<em>No scenes</em>";
-            return;
+    // ------------------------------
+    function buildTree(folderPath = null, container = projectTreeEl) {
+        container.innerHTML = "";
+        let items;
+        if (!folderPath) {
+            // Root: show scenes and top-level folders
+            items = [];
+            Object.keys(graph.scenes).forEach(scene => items.push({ name: scene, type: "scene" }));
+            Object.keys(graph.folders).forEach(folder => {
+                if (!graph.folders[folder].parent) items.push({ name: folder, type: "folder" });
+            });
+        } else {
+            const folderContents = graph.getFolderContents(folderPath);
+            items = folderContents.subfolders.map(f => ({ name: f.name, path: f.name, type: "folder" }))
+                  .concat(folderContents.files.map(f => ({ name: f.name, path: f.name, type: f.type || "file", extension: f.extension || "" })));
         }
 
-        scenes.forEach(sceneName => {
+        items.forEach(item => {
             const div = document.createElement("div");
-            div.textContent = sceneName;
-            div.classList.add("tree-item");
-            div.dataset.type = "scene";
-            div.dataset.name = sceneName;
+            div.className = "tree-item";
+            div.textContent = item.name + (item.extension ? `.${item.extension}` : "");
+            div.dataset.type = item.type;
+            div.dataset.name = item.name;
+            div.dataset.path = item.path || item.name;
 
-            div.addEventListener("click", () => selectItem(div));
-            projectTree.appendChild(div);
+            div.addEventListener("click", () => {
+                renderFileInfo(item);
+            });
 
-            // Render nodes inside the scene
-            const nodes = ProjectManager.get_scene_file(sceneName).nodes;
-            for (const nodeName in nodes) {
-                const ndiv = document.createElement("div");
-                ndiv.textContent = `  └─ ${nodeName} (${nodes[nodeName].type})`;
-                ndiv.classList.add("tree-item");
-                ndiv.dataset.type = "node";
-                ndiv.dataset.scene = sceneName;
-                ndiv.dataset.name = nodeName;
-                ndiv.style.paddingLeft = "20px";
-                ndiv.addEventListener("click", () => selectItem(ndiv));
-                projectTree.appendChild(ndiv);
-            }
+            container.appendChild(div);
         });
     }
 
-    // -------------------------------
-    // Item Selection
-    // -------------------------------
-    function selectItem(div) {
-        document.querySelectorAll(".tree-item").forEach(i => i.classList.remove("selected"));
-        div.classList.add("selected");
-        selectedItem = div;
+    function renderFileInfo(item) {
+        let html = `<strong>Name:</strong> ${escapeHTML(item.name)}<br>`;
+        html += `<strong>Type:</strong> ${escapeHTML(item.type)}<br>`;
+        if (item.type === "scene") {
+            const scene = graph.getScene(item.name);
+            const nodeCount = scene ? Object.keys(scene.nodes).length : 0;
+            html += `<strong>Nodes:</strong> ${nodeCount}<br>`;
+        }
+        if (item.type === "folder") {
+            const folder = graph.folders[item.path];
+            if (folder) {
+                html += `<strong>Files:</strong> ${folder.files.length}<br>`;
+                html += `<strong>Subfolders:</strong> ${folder.subfolders.length}<br>`;
+            }
+        }
+        fileInfoEl.innerHTML = html;
 
-        const type = div.dataset.type;
-
-        if (type === "scene") {
-            const sceneData = ProjectManager.get_scene_file(div.dataset.name);
-            fileInfo.innerHTML = `<b>Scene:</b> ${div.dataset.name} <br>Nodes: ${Object.keys(sceneData.nodes).length}`;
-            filePreview.innerHTML = "<em>Scene preview placeholder</em>";
-        } else if (type === "node") {
-            const nodeData = ProjectManager.get_scene_file(div.dataset.scene).nodes[div.dataset.name];
-            fileInfo.innerHTML = `<b>Node:</b> ${div.dataset.name} <br>Type: ${nodeData.type} <br>Parent: ${nodeData.parent || "None"} <br>Scripts: ${nodeData.scripts.join(", ") || "None"}`;
-            filePreview.innerHTML = "<em>Node preview placeholder</em>";
+        // Preview placeholder
+        if (item.type === "file" && item.extension.match(/(png|jpg|jpeg|gif)$/i)) {
+            const asset = graph.getAsset(item.path);
+            if (asset && asset.data) {
+                const blob = new Blob([asset.data]);
+                const url = URL.createObjectURL(blob);
+                filePreviewEl.innerHTML = `<img src="${url}" style="max-width:100%; max-height:100%;">`;
+            } else {
+                filePreviewEl.innerHTML = `<em>Image preview not available</em>`;
+            }
+        } else {
+            filePreviewEl.innerHTML = `<em>No preview</em>`;
         }
     }
 
-    // -------------------------------
+    // ------------------------------
     // NLP Integration
-    // -------------------------------
-    async function processCommand(cmd) {
+    // ------------------------------
+    async function sendNLPCommandGUI() {
+        const cmd = nlpInput.value.trim();
         if (!cmd) return;
-        nlpLog.innerHTML += `> ${cmd}\n`;
+        nlpLog.innerHTML += `> ${escapeHTML(cmd)}\n`;
         nlpInput.value = "";
 
-        const result = await ProjectManager.process_nlp_command(cmd);
-        nlpLog.innerHTML += `${result}\n`;
-        nlpLog.scrollTop = nlpLog.scrollHeight;
+        try {
+            const result = await window.ProjectManager.process_nlp_command(cmd);
+            nlpLog.innerHTML += `${escapeHTML(result)}\n`;
+        } catch (err) {
+            nlpLog.innerHTML += `Error: ${escapeHTML(err.message)}\n`;
+        }
 
-        renderProjectTree();
+        nlpLog.scrollTop = nlpLog.scrollHeight;
+        buildTree(); // Refresh tree after commands
     }
 
-    nlpSend.addEventListener("click", () => processCommand(nlpInput.value.trim()));
-    nlpInput.addEventListener("keydown", e => {
-        if (e.key === "Enter") processCommand(nlpInput.value.trim());
+    nlpSend.addEventListener("click", sendNLPCommandGUI);
+    nlpInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendNLPCommandGUI();
     });
 
-    // -------------------------------
-    // Initialize
-    // -------------------------------
-    renderProjectTree();
-    console.log("Godot GUI integrated and initialized.");
+    // ------------------------------
+    // ZIP Import
+    // ------------------------------
+    function addZipImportInput() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".zip";
+        input.style.marginBottom = "0.5em";
+        document.getElementById("top-left").insertBefore(input, projectTreeEl);
+
+        input.addEventListener("change", async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const JSZipScript = document.createElement("script");
+            JSZipScript.src = "libs/jszip.min.js";
+            JSZipScript.onload = async () => {
+                const zip = await JSZip.loadAsync(file);
+                await processZip(zip);
+                buildTree();
+            };
+            document.body.appendChild(JSZipScript);
+        });
+    }
+
+    async function processZip(zip, parentFolder = null) {
+        for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+            const parts = relativePath.split("/");
+            const name = parts.pop();
+            const folderPath = parts.join("/");
+            if (zipEntry.dir) {
+                graph.addFolder(relativePath, parentFolder);
+            } else {
+                const data = await zipEntry.async("arraybuffer");
+                const extension = name.split(".").pop();
+                graph.addAsset(relativePath, "file", extension, folderPath || null, data);
+                if (folderPath && !graph.folders[folderPath]) graph.addFolder(folderPath, parentFolder);
+            }
+        }
+    }
+
+    addZipImportInput();
+    buildTree();
+
+    console.log("Godot.js initialized with ZIP import and dynamic project tree.");
 
 })();
