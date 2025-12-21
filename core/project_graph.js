@@ -107,6 +107,22 @@ class ProjectGraph {
     getSceneFile(sceneName) {
         return this.scenes[sceneName] || null;
     }
+
+    // New: Generate text representation for preview/export
+    generateSceneFile(sceneName) {
+        const scene = this.scenes[sceneName];
+        if (!scene) return null;
+
+        let output = `Scene: ${sceneName}\nNodes:\n`;
+        for (const nodeName in scene.nodes) {
+            const node = scene.nodes[nodeName];
+            output += `- ${nodeName} (Type: ${node.type}`;
+            if (node.parent) output += `, Parent: ${node.parent}`;
+            if (node.scripts.length) output += `, Scripts: ${node.scripts.join(", ")}`;
+            output += `)\n`;
+        }
+        return output;
+    }
 }
 
 // Expose globally
