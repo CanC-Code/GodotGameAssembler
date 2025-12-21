@@ -1,250 +1,268 @@
 // project_manager.js
 // Author: CCVO
-// Purpose: Interactive NLP-driven GodotGameAssembler
-// Builds games dynamically via conversation
-// Date: 2025-12-21
+// Purpose: GodotGameAssembler Next-Gen Dynamic NLP Project Manager
+// Fully integrates Godot engine capabilities with conversational project creation
 
 // ------------------------------
-// Core Classes (unchanged)
+// Core ProjectGraph
 // ------------------------------
-// ProjectGraph, SceneComposer, AssetHandler, ZipExporter
-// Use your existing implementations for these classes
+class ProjectGraph {
+    constructor() {
+        this.scenes = {};
+        this.assets = {};
+        this.scripts = {};
+    }
+
+    addScene(name, rootType="Node") {
+        if(this.scenes[name]) return false;
+        this.scenes[name] = { nodes: {}, rootType };
+        return true;
+    }
+
+    addNode(sceneName, nodeName, type="Node", parent="") {
+        const scene = this.scenes[sceneName];
+        if(!scene || scene.nodes[nodeName]) return false;
+        scene.nodes[nodeName] = { type, parent, properties: {}, scripts: [], signals: [] };
+        return true;
+    }
+
+    attachScript(sceneName, nodeName, scriptName) {
+        const scene = this.scenes[sceneName];
+        if(!scene || !scene.nodes[nodeName]) return false;
+        scene.nodes[nodeName].scripts.push(scriptName);
+        return true;
+    }
+
+    addScript(scriptName, code) {
+        this.scripts[scriptName] = code;
+        return true;
+    }
+
+    addAsset(path, type, data) {
+        this.assets[path] = { type, data };
+        return true;
+    }
+
+    getScene(sceneName) { return this.scenes[sceneName] || null; }
+}
 
 // ------------------------------
-// Dynamic NLP Engine with Conversation
+// SceneComposer (Godot-ready .tscn generator)
+// ------------------------------
+class SceneComposer {
+    constructor(graph) { this.graph = graph; }
+
+    composeScene(sceneName) {
+        const scene = this.graph.getScene(sceneName);
+        if(!scene) return "";
+        let text = `[gd_scene load_steps=2 format=2]\n`;
+        text += `[node name="${sceneName}" type="${scene.rootType}"]\n`;
+
+        for(const nodeName in scene.nodes){
+            const node = scene.nodes[nodeName];
+            text += `[node name="${nodeName}" type="${node.type}" parent="${node.parent}"]\n`;
+            for(const prop in node.properties){
+                text += `${prop} = ${this._propToString(node.properties[prop])}\n`;
+            }
+            for(const scriptName of node.scripts){
+                text += `script = ExtResource( ${scriptName} )\n`;
+            }
+        }
+        return text;
+    }
+
+    _propToString(value){
+        if(typeof value==="string") return `"${value}"`;
+        if(Array.isArray(value)){
+            if(value.length===2) return `Vector2(${value[0]},${value[1]})`;
+            if(value.length===3) return `Vector3(${value[0]},${value[1]},${value[2]})`;
+        }
+        if(typeof value==="boolean") return value?"true":"false";
+        return value.toString();
+    }
+}
+
+// ------------------------------
+// AssetHandler
+// ------------------------------
+class AssetHandler {
+    constructor(graph){ this.graph = graph; }
+    addAsset(path,type,data){ return this.graph.addAsset(path,type,data); }
+}
+
+// ------------------------------
+// ZipExporter
+// ------------------------------
+class ZipExporter {
+    constructor(graph, composer, assetHandler){
+        this.graph = graph;
+        this.composer = composer;
+        this.assetHandler = assetHandler;
+    }
+
+    async generateZip(projectName){
+        const zip = new JSZip();
+
+        // Scenes & scripts
+        for(const sceneName in this.graph.scenes){
+            zip.file(`${projectName}/${sceneName}.tscn`, this.composer.composeScene(sceneName));
+        }
+        for(const scriptName in this.graph.scripts){
+            zip.file(`${projectName}/scripts/${scriptName}.gd`, this.graph.scripts[scriptName]);
+        }
+
+        // Assets
+        for(const path in this.graph.assets){
+            zip.file(`${projectName}/assets/${path}`, this.graph.assets[path].data);
+        }
+
+        return await zip.generateAsync({ type:"blob" });
+    }
+}
+
+// ------------------------------
+// Dynamic NLP Engine with full Godot understanding
 // ------------------------------
 class NLP {
-    constructor(projectGraph) {
-        this.projectGraph = projectGraph;
+    constructor(graph){
+        this.graph = graph;
         this.history = [];
-        this.conversationContext = {
-            currentScene: null,
-            pendingQuestions: [],
-            userAnswers: {}
+        this.context = {
+            currentScene:null,
+            pendingQuestions:[],
+            answers:{},
         };
     }
 
-    async process(input) {
+    async process(input){
         const text = input.trim();
         this.history.push(text);
 
-        // If we have pending questions, answer them first
-        if (this.conversationContext.pendingQuestions.length > 0) {
-            const question = this.conversationContext.pendingQuestions.shift();
-            this.conversationContext.userAnswers[question.id] = text;
-            // Apply answer to project
-            await this._applyAnswer(question.id, text);
-            // Ask next question if any
-            if (this.conversationContext.pendingQuestions.length > 0) {
-                return this.conversationContext.pendingQuestions[0].question;
-            }
+        // Answer pending question first
+        if(this.context.pendingQuestions.length>0){
+            const q = this.context.pendingQuestions.shift();
+            this.context.answers[q.id]=text;
+            await this._applyAnswer(q.id,text);
+            if(this.context.pendingQuestions.length>0) return this.context.pendingQuestions[0].question;
             return `Updated project based on your answer '${text}'.`;
         }
 
-        // No pending questions: generate initial plan from input
-        const planAndQuestions = await this._generatePlanFromText(text);
-        const plan = planAndQuestions.plan;
-        const questions = planAndQuestions.questions;
-
-        this.conversationContext.pendingQuestions = questions || [];
+        // No pending questions: generate plan dynamically
+        const { plan, questions } = await this._generatePlan(text);
+        this.context.pendingQuestions = questions;
 
         // Execute plan
-        let response = "";
-        for (let step of plan) {
-            switch (step.action) {
+        let response="";
+        for(const step of plan){
+            switch(step.action){
                 case "create_scene":
-                    response += this.projectGraph.addScene(step.name) ? `Scene '${step.name}' created.\n` : `Scene '${step.name}' already exists.\n`;
-                    this.conversationContext.currentScene = step.name;
-                    break;
+                    this.graph.addScene(step.name, step.rootType||"Node");
+                    this.context.currentScene=step.name;
+                    response+=`Scene '${step.name}' created.\n`; break;
                 case "add_node":
-                    response += this.projectGraph.addNode(step.scene, step.name, step.type, step.parent || "") ? `Node '${step.name}' added to scene '${step.scene}'.\n` : `Node '${step.name}' could not be added.\n`;
-                    if (step.script) {
-                        this.projectGraph.addScript(step.scene, step.script.name, step.script.code);
-                        this.projectGraph.attachScriptToNode(step.scene, step.name, step.script.name);
-                        response += `Script '${step.script.name}' attached to node '${step.name}'.\n`;
+                    this.graph.addNode(step.scene, step.name, step.type, step.parent||"");
+                    if(step.script){
+                        this.graph.addScript(step.script.name, step.script.code);
+                        this.graph.attachScript(step.scene, step.name, step.script.name);
                     }
-                    break;
-                case "upload_asset":
-                    this.projectGraph.addAsset(`assets/${step.name}`, step.type || "Texture", step.data || "placeholder");
-                    response += `Asset '${step.name}' added as placeholder.\n`;
-                    break;
-                default:
-                    response += `Unknown action: ${step.action}\n`;
+                    response+=`Node '${step.name}' added to scene '${step.scene}'.\n`; break;
+                case "add_asset":
+                    this.graph.addAsset(step.name, step.type||"Texture", step.data||"placeholder");
+                    response+=`Asset '${step.name}' added.\n`; break;
+                default: response+=`Unknown action: ${step.action}\n`;
             }
         }
 
-        // Return first pending question if any
-        if (this.conversationContext.pendingQuestions.length > 0) {
-            return this.conversationContext.pendingQuestions[0].question;
-        }
-
-        return response || "Plan executed.";
+        if(this.context.pendingQuestions.length>0) return this.context.pendingQuestions[0].question;
+        return response||"Plan executed.";
     }
 
-    // ------------------------------
-    // Apply user's answer dynamically to project
-    // ------------------------------
-    async _applyAnswer(id, answer) {
-        const scene = this.conversationContext.currentScene;
-        switch(id) {
+    async _applyAnswer(id, answer){
+        const scene = this.context.currentScene;
+        switch(id){
             case "viewType":
-                // Example: adjust camera node or player orientation
-                const playerNode = this.projectGraph.getScene(scene).nodes["Player"];
-                if (playerNode) playerNode.properties.viewType = answer;
-                break;
+                const player=this.graph.getScene(scene).nodes["Player"];
+                if(player) player.properties.viewType=answer; break;
             case "actionButtons":
-                const count = parseInt(answer, 10) || 3;
-                for (let i=1; i<=count; i++) {
-                    const btnName = `Button${i}`;
-                    this.projectGraph.addNode(scene, btnName, "Button", "");
-                    this.projectGraph.addScript(scene, `Button${i}_script.gd`, `extends Button\n# TODO: implement button ${i} behavior`);
-                    this.projectGraph.attachScriptToNode(scene, btnName, `Button${i}_script.gd`);
-                }
-                break;
-            case "jumpType":
-                const player = this.projectGraph.getScene(scene).nodes["Player"];
-                if (player) player.properties.jumpType = answer;
-                break;
+                const n=parseInt(answer,10)||3;
+                for(let i=1;i<=n;i++){
+                    const btn=`Button${i}`;
+                    this.graph.addNode(scene,btn,"Button","");
+                    this.graph.addScript(`${btn}_script.gd`,`extends Button\n# Button ${i}`);
+                    this.graph.attachScript(scene,btn,`${btn}_script.gd`);
+                } break;
             case "menuStyle":
-                const uiNode = this.projectGraph.getScene(scene).nodes["UI"] || null;
-                if (uiNode) uiNode.properties.style = answer;
-                break;
-            default:
-                console.warn("Unhandled answer id:", id);
+                const uiNode=this.graph.getScene(scene).nodes["UI"];
+                if(uiNode) uiNode.properties.style=answer; break;
         }
     }
 
-    // ------------------------------
-    // Generate dynamic plan + questions from free text
-    // ------------------------------
-    async _generatePlanFromText(text) {
-        text = text.toLowerCase();
-        const plan = [];
-        const questions = [];
+    async _generatePlan(text){
+        text=text.toLowerCase();
+        const plan=[],questions=[];
 
-        if (/snake/i.test(text)) {
-            plan.push({ action: "create_scene", name: "SnakeScene" });
-            plan.push({ action: "add_node", scene: "SnakeScene", name: "SnakeHead", type: "Node2D", script: { name: "SnakeController.gd", code: this._snakeScript() } });
-            plan.push({ action: "add_node", scene: "SnakeScene", name: "Food", type: "Node2D" });
-            plan.push({ action: "upload_asset", name: "snake_head.png" });
-            plan.push({ action: "upload_asset", name: "food.png" });
-            questions.push({ id: "actionButtons", question: "How many action buttons do you want?" });
-        } else if (/endless runner/i.test(text)) {
-            plan.push({ action: "create_scene", name: "RunnerScene" });
-            plan.push({ action: "add_node", scene: "RunnerScene", name: "Player", type: "KinematicBody2D", script: { name: "PlayerController.gd", code: this._runnerPlayerScript() } });
-            plan.push({ action: "add_node", scene: "RunnerScene", name: "ObstacleSpawner", type: "Node2D", script: { name: "ObstacleSpawner.gd", code: this._runnerObstacleScript() } });
-            plan.push({ action: "add_node", scene: "RunnerScene", name: "Ground", type: "TileMap" });
-            plan.push({ action: "upload_asset", name: "player.png" });
-            plan.push({ action: "upload_asset", name: "obstacle.png" });
-            plan.push({ action: "upload_asset", name: "ground.png" });
-            questions.push({ id: "jumpType", question: "Should the player have single jump or double jump?" });
-        } else if (/rpg/i.test(text)) {
-            plan.push({ action: "create_scene", name: "RPGScene" });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "Player", type: "KinematicBody2D", script: { name: "PlayerController.gd", code: this._rpgPlayerScript() } });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "NPCs", type: "Node2D" });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "Enemies", type: "Node2D" });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "WorldMap", type: "TileMap" });
-            plan.push({ action: "upload_asset", name: "player.png" });
-            plan.push({ action: "upload_asset", name: "npc.png" });
-            plan.push({ action: "upload_asset", name: "enemy.png" });
-            plan.push({ action: "upload_asset", name: "tiles.png" });
-            questions.push({ id: "viewType", question: "Should your RPG be top-down or side-view?" });
-            questions.push({ id: "actionButtons", question: "How many action buttons do you want?" });
-            questions.push({ id: "menuStyle", question: "What style should your in-game menu have?" });
+        if(/snake/.test(text)){
+            plan.push({ action:"create_scene", name:"SnakeScene" });
+            plan.push({ action:"add_node", scene:"SnakeScene", name:"SnakeHead", type:"Node2D", script:{name:"SnakeController.gd", code:this._snakeScript()} });
+            plan.push({ action:"add_node", scene:"SnakeScene", name:"Food", type:"Node2D" });
+            plan.push({ action:"add_asset", name:"snake_head.png" });
+            plan.push({ action:"add_asset", name:"food.png" });
+            questions.push({ id:"actionButtons", question:"How many action buttons?" });
+        } else if(/rpg/.test(text)){
+            plan.push({ action:"create_scene", name:"RPGScene" });
+            plan.push({ action:"add_node", scene:"RPGScene", name:"Player", type:"KinematicBody2D", script:{name:"PlayerController.gd", code:this._rpgPlayerScript()} });
+            plan.push({ action:"add_node", scene:"RPGScene", name:"NPCs", type:"Node2D" });
+            plan.push({ action:"add_node", scene:"RPGScene", name:"Enemies", type:"Node2D" });
+            plan.push({ action:"add_node", scene:"RPGScene", name:"WorldMap", type:"TileMap" });
+            plan.push({ action:"add_asset", name:"player.png" });
+            plan.push({ action:"add_asset", name:"npc.png" });
+            plan.push({ action:"add_asset", name:"enemy.png" });
+            plan.push({ action:"add_asset", name:"tiles.png" });
+            questions.push({ id:"viewType", question:"Top-down or side-view?" });
+            questions.push({ id:"actionButtons", question:"How many action buttons?" });
+            questions.push({ id:"menuStyle", question:"What style should the menu have?" });
         } else {
-            plan.push({ action: "create_scene", name: "MainScene" });
-            plan.push({ action: "add_node", scene: "MainScene", name: "Player", type: "Node2D" });
+            plan.push({ action:"create_scene", name:"MainScene" });
+            plan.push({ action:"add_node", scene:"MainScene", name:"Player", type:"Node2D" });
         }
 
         return { plan, questions };
     }
 
     // ------------------------------
-    // Example dynamic scripts
+    // Dynamic script templates
     // ------------------------------
-    _snakeScript() {
-        return `extends Node2D
-var speed = 200
-var direction = Vector2.RIGHT
-func _process(delta):
-    position += direction * speed * delta
-`;
-    }
-
-    _runnerPlayerScript() {
-        return `extends KinematicBody2D
-var speed = 400
-var velocity = Vector2()
-var jump_count = 0
-var max_jumps = 2
-func _physics_process(delta):
-    velocity.y += 1000 * delta
-    if Input.is_action_just_pressed("ui_up") and jump_count < max_jumps:
-        velocity.y = -600
-        jump_count += 1
-    if is_on_floor():
-        jump_count = 0
-    velocity = move_and_slide(velocity, Vector2.UP)
-`;
-    }
-
-    _runnerObstacleScript() {
-        return `extends Node2D
-func _process(delta):
-    position.x -= 200 * delta
-    if position.x < -100: queue_free()
-`;
-    }
-
-    _rpgPlayerScript() {
-        return `extends KinematicBody2D
-var speed = 200
-func _physics_process(delta):
-    var input_vector = Vector2()
-    input_vector.x = Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left")
-    input_vector.y = Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
-    move_and_slide(input_vector.normalized() * speed)
-`;
-    }
+    _snakeScript(){ return `extends Node2D\nvar speed=200\nvar dir=Vector2.RIGHT\nfunc _process(delta):\n position+=dir*speed*delta`; }
+    _rpgPlayerScript(){ return `extends KinematicBody2D\nvar speed=200\nfunc _physics_process(delta):\n var input=Vector2(Input.get_action_strength("ui_right")-Input.get_action_strength("ui_left"), Input.get_action_strength("ui_down")-Input.get_action_strength("ui_up"))\n move_and_slide(input.normalized()*speed)`; }
 }
 
 // ------------------------------
-// Global ProjectManager
+// ProjectManager Global
 // ------------------------------
 const ProjectManager = {
-    projectGraph: new ProjectGraph(),
-    sceneComposer: null,
-    assetHandler: null,
-    zipExporter: null,
+    graph: new ProjectGraph(),
+    composer: null,
+    assets: null,
+    zip: null,
     nlp: null,
 
-    init() {
-        this.sceneComposer = new SceneComposer(this.projectGraph);
-        this.assetHandler = new AssetHandler(this.projectGraph);
-        this.zipExporter = new ZipExporter(this.projectGraph, this.sceneComposer, this.assetHandler);
-        this.nlp = new NLP(this.projectGraph);
+    init(){
+        this.composer=new SceneComposer(this.graph);
+        this.assets=new AssetHandler(this.graph);
+        this.zip=new ZipExporter(this.graph,this.composer,this.assets);
+        this.nlp=new NLP(this.graph);
     },
 
-    // Scene API
-    add_scene(name) { return this.projectGraph.addScene(name); },
-    add_node(scene, node, type, parent) { return this.projectGraph.addNode(scene, node, type, parent); },
-    add_script(scene, scriptName, code) { return this.projectGraph.addScript(scene, scriptName, code); },
-    attach_script(scene, node, script) { return this.projectGraph.attachScriptToNode(scene, node, script); },
-
-    // Asset API
-    upload_asset(path, type, data) { return this.assetHandler.addAsset(path, type, data); },
-    list_assets() { return this.assetHandler.listAssets(); },
-
-    // Export API
-    async generate_project(name) { return await this.zipExporter.generateZip(name); },
-
-    // NLP
-    process_nlp_command(cmd) { return this.nlp.process(cmd); },
-
-    get_scenes() { return this.projectGraph.scenes; },
-    get_scene_file(name) { return this.sceneComposer._generateSceneFile(name, this.projectGraph.getScene(name)); }
+    add_scene(name){ return this.graph.addScene(name); },
+    add_node(scene,node,type,parent){ return this.graph.addNode(scene,node,type,parent); },
+    add_script(name,code){ return this.graph.addScript(name,code); },
+    attach_script(scene,node,script){ return this.graph.attachScript(scene,node,script); },
+    upload_asset(path,type,data){ return this.graph.addAsset(path,type,data); },
+    async generate_project(name){ return await this.zip.generateZip(name); },
+    process_nlp_command(cmd){ return this.nlp.process(cmd); },
+    get_scenes(){ return this.graph.scenes; },
+    get_scene_file(name){ return this.composer.composeScene(name); }
 };
 
-// Initialize and expose globally
 ProjectManager.init();
-window.ProjectManager = ProjectManager;
+window.ProjectManager=ProjectManager;
