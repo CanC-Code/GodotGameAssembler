@@ -1,155 +1,110 @@
-body {
-  margin: 0;
-  height: 100vh;
-  background: #1e1e1e;
-  color: #f0f0f0;
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-}
+// libs/godot.js
+// Author: CCVO
+// Purpose: Guided interactive chat for GodotGameAssembler
+// Features: proactive prompts, NLP command handling, game creation guidance
 
-header {
-  background: #282c34;
-  padding: 0.75em;
-  text-align: center;
-  font-size: 1.4em;
-  border-bottom: 1px solid #333;
-}
+(function () {
 
-#app-root {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+    if (!window.ProjectManager) {
+        throw new Error("ProjectManager must be loaded before godot.js");
+    }
 
-/* ---------- TOP / BOTTOM SPLIT ---------- */
+    const nlpInput = document.getElementById("nlp-command");
+    const nlpSend = document.getElementById("nlp-send");
+    const nlpLog = document.getElementById("nlp-log");
 
-#top-area {
-  flex: 0 0 65%;
-  display: flex;
-  padding: 1em;
-  gap: 1em;
-  overflow: hidden;
-}
+    // ------------------------------
+    // Conversation State
+    // ------------------------------
+    const convo = {
+        gameNamed: false,
+        conceptSet: false,
+        nextPrompt: "name_game", // states: name_game, set_concept, create_scene, idle
+    };
 
-#bottom-area {
-  flex: 0 0 35%;
-  display: flex;
-  flex-direction: column;
-  padding: 0 1em 1em 1em;
-}
+    function logMessage(msg) {
+        nlpLog.innerHTML += msg + "\n";
+        nlpLog.scrollTop = nlpLog.scrollHeight;
+    }
 
-/* ---------- TOP LEFT / RIGHT ---------- */
+    async function handleInput(userInput) {
+        logMessage(`> ${userInput}`);
 
-#top-left {
-  width: 300px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
+        // Trim input
+        const text = userInput.trim();
 
-#top-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
+        // Check conversation state
+        if (!convo.gameNamed && convo.nextPrompt === "name_game") {
+            const m = text.match(/^name\s+game\s+"?([^"]+)"?/i);
+            if (m) {
+                const name = m[1];
+                convo.gameNamed = true;
+                ProjectManager.projectName = name;
+                logMessage(`Game named '${name}'.`);
+                convo.nextPrompt = "set_concept";
+                logMessage("Please set your game concept: set concept \"<description>\"");
+                return;
+            } else {
+                logMessage("Please name your game using: name game \"<Name>\"");
+                return;
+            }
+        }
 
-/* ---------- PANELS ---------- */
+        if (!convo.conceptSet && convo.nextPrompt === "set_concept") {
+            const m = text.match(/^set\s+concept\s+"?([^"]+)"?/i);
+            if (m) {
+                const concept = m[1];
+                convo.conceptSet = true;
+                ProjectManager.projectConcept = concept;
+                logMessage(`Concept set: "${concept}"`);
+                convo.nextPrompt = "create_scene";
+                logMessage("Let's create your first scene: create scene <SceneName>");
+                return;
+            } else {
+                logMessage("Please set your game concept using: set concept \"<description>\"");
+                return;
+            }
+        }
 
-.panel {
-  background: #2b2b2b;
-  border-radius: 8px;
-  padding: 0.75em;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5em;
-}
+        if (convo.nextPrompt === "create_scene") {
+            const m = text.match(/^create\s+scene\s+(\w+)/i);
+            if (m) {
+                const sceneName = m[1];
+                const result = await ProjectManager.process_nlp_command(text);
+                logMessage(result);
+                convo.nextPrompt = "idle";
+                logMessage("Scene created. You can now add nodes, buttons, scripts, or more scenes. Type 'help' for commands.");
+                return;
+            } else {
+                logMessage("Please create a scene using: create scene <SceneName>");
+                return;
+            }
+        }
 
-.panel-title {
-  font-weight: bold;
-  border-bottom: 1px solid #444;
-  padding-bottom: 0.25em;
-}
+        // Default: pass to NLP_PRO
+        const result = await ProjectManager.process_nlp_command(text);
+        logMessage(result);
+    }
 
-/* ---------- PROJECT TREE ---------- */
+    function sendNLPCommandGUI() {
+        const cmd = nlpInput.value.trim();
+        if (!cmd) return;
+        nlpInput.value = "";
+        handleInput(cmd);
+    }
 
-#project-tree {
-  font-family: monospace;
-  font-size: 0.9em;
-  overflow-y: auto;
-  flex: 1;
-}
+    // Event listeners
+    nlpSend.addEventListener("click", sendNLPCommandGUI);
+    nlpInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendNLPCommandGUI();
+    });
 
-.tree-item {
-  padding: 4px;
-  cursor: pointer;
-}
+    // ------------------------------
+    // Initial prompt
+    // ------------------------------
+    logMessage("Hello! What would you like to do?");
+    logMessage("Start by naming your game: name game \"<Name>\"");
 
-.tree-item:hover {
-  background: #3a3a3a;
-}
+    console.log("Godot interactive chat initialized.");
 
-.tree-item.selected {
-  background: #4a90e2;
-}
-
-/* ---------- FILE INFO / PREVIEW ---------- */
-
-#file-info {
-  min-height: 80px;
-  border-bottom: 1px solid #444;
-  font-family: monospace;
-  font-size: 0.9em;
-  padding: 0.25em;
-}
-
-#file-preview {
-  flex: 1;
-  overflow: auto;
-  font-family: monospace;
-  font-size: 0.9em;
-  background: #1a1a1a;
-  border-radius: 4px;
-  padding: 0.5em;
-}
-
-/* ---------- NLP ---------- */
-
-#nlp-log {
-  flex: 1;
-  background: #1b1b1b;
-  padding: 0.5em;
-  border-radius: 4px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-.nlp-input-row {
-  display: flex;
-  gap: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-input {
-  flex: 1;
-  padding: 0.5em;
-  border-radius: 4px;
-  border: none;
-  background: #3a3a3a;
-  color: #f0f0f0;
-}
-
-button {
-  padding: 0.5em 1em;
-  border: none;
-  border-radius: 4px;
-  background: #4a90e2;
-  color: white;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #357ab8;
-}
+})();
