@@ -3,7 +3,7 @@ name: Deploy GodotGameAssembler Pages
 on:
   push:
     branches:
-      - main  # Trigger on main branch updates
+      - main  # Trigger when main branch is updated
 
 jobs:
   deploy:
@@ -44,7 +44,7 @@ jobs:
           git add index.html libs godot.js
           git commit -m "Deploy GodotGameAssembler interface" || echo "No changes to commit"
 
-      # 7. Push to gh-pages
+      # 7. Push to gh-pages using GITHUB_TOKEN
       - name: Push to gh-pages
         run: |
-          git push -f origin gh-pages
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} gh-pages
