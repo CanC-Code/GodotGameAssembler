@@ -16,7 +16,53 @@
     const pm = window.ProjectManager;
 
     // ----------------------------
-    // Helper: Render project tree
+    // Helper: Display selected info
+    // ----------------------------
+    function displaySelection(type, name) {
+        fileInfoEl.innerHTML = "";
+        filePreviewEl.innerHTML = "";
+
+        if (type === "scene") {
+            const scene = pm.graph.getScene(name);
+            if (!scene) return;
+
+            let info = `Scene: ${name}\nNodes: ${Object.keys(scene.nodes).length}`;
+            for (const nodeName in scene.nodes) {
+                const node = scene.nodes[nodeName];
+                info += `\n- ${nodeName} (${node.type})`;
+                if (node.scripts.length) info += ` [Scripts: ${node.scripts.join(", ")}]`;
+            }
+            fileInfoEl.textContent = info;
+            filePreviewEl.innerHTML = "<em>3D viewport / scene preview placeholder</em>";
+
+        } else if (type === "folder") {
+            const folder = pm.graph.folders[name];
+            if (!folder) return;
+            const counts = `Files: ${folder.files.length}, Subfolders: ${folder.subfolders.length}`;
+            fileInfoEl.textContent = `Folder: ${folder.name}\n${counts}`;
+            filePreviewEl.innerHTML = "<em>Folder preview placeholder</em>";
+
+        } else if (type === "asset") {
+            const asset = pm.graph.assets[name];
+            if (!asset) return;
+            fileInfoEl.textContent = `Name: ${asset.name}\nType: ${asset.type}\nExtension: ${asset.extension}`;
+
+            if (asset.type === "image") {
+                const img = document.createElement("img");
+                img.src = asset.data || "";
+                img.style.maxWidth = "100%";
+                img.style.maxHeight = "100%";
+                filePreviewEl.appendChild(img);
+            } else if (asset.type === "model") {
+                filePreviewEl.innerHTML = "<em>3D model preview placeholder</em>";
+            } else {
+                filePreviewEl.innerHTML = "<em>Preview not available</em>";
+            }
+        }
+    }
+
+    // ----------------------------
+    // Render project tree
     // ----------------------------
     function renderProjectTree() {
         projectTreeEl.innerHTML = "";
@@ -79,44 +125,7 @@
     }
 
     // ----------------------------
-    // Helper: Display file/folder info
-    // ----------------------------
-    function displaySelection(type, name) {
-        fileInfoEl.innerHTML = "";
-        filePreviewEl.innerHTML = "";
-
-        if (type === "scene") {
-            const content = pm.graph.generateSceneFile(name);
-            fileInfoEl.textContent = content || "Scene empty.";
-            filePreviewEl.innerHTML = "<em>3D viewport / scene preview placeholder</em>";
-        } else if (type === "folder") {
-            const folder = pm.graph.folders[name];
-            if (!folder) return;
-            const counts = `Files: ${folder.files.length}, Subfolders: ${folder.subfolders.length}`;
-            fileInfoEl.textContent = `Folder: ${folder.name}\n${counts}`;
-            filePreviewEl.innerHTML = "<em>Folder preview placeholder</em>";
-        } else if (type === "asset") {
-            const asset = pm.graph.assets[name];
-            if (!asset) return;
-            let info = `Name: ${asset.name}\nType: ${asset.type}\nExtension: ${asset.extension}`;
-            fileInfoEl.textContent = info;
-
-            if (asset.type === "image") {
-                const img = document.createElement("img");
-                img.src = asset.data || "";
-                img.style.maxWidth = "100%";
-                img.style.maxHeight = "100%";
-                filePreviewEl.appendChild(img);
-            } else if (asset.type === "model") {
-                filePreviewEl.innerHTML = "<em>3D model preview placeholder</em>";
-            } else {
-                filePreviewEl.innerHTML = "<em>Preview not available</em>";
-            }
-        }
-    }
-
-    // ----------------------------
-    // Event delegation for tree clicks
+    // Tree click handler
     // ----------------------------
     projectTreeEl.addEventListener("click", (e) => {
         const item = e.target.closest(".tree-item");
@@ -130,12 +139,30 @@
     });
 
     // ----------------------------
+    // Override ProjectManager methods to auto-refresh
+    // ----------------------------
+    const refreshTree = () => {
+        renderProjectTree();
+    };
+
+    const wrapWithRefresh = (fnName) => {
+        const orig = pm[fnName];
+        pm[fnName] = async function (...args) {
+            const result = await orig.apply(pm, args);
+            refreshTree();
+            return result;
+        };
+    };
+
+    ["add_scene", "add_node", "add_script", "attach_script", "upload_asset"].forEach(fn => wrapWithRefresh(fn));
+
+    // ----------------------------
     // Initial render
     // ----------------------------
     renderProjectTree();
 
     // ----------------------------
-    // Expose re-render function for updates
+    // Expose globally
     // ----------------------------
     window.refreshProjectTree = renderProjectTree;
 
