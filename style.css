@@ -1,6 +1,6 @@
-/* ------------------------------ */
-/* GLOBAL STYLES */
-/* ------------------------------ */
+/* style.css - Full CSS for Godot Game Assembler */
+
+/* ---------- BODY ---------- */
 body {
   margin: 0;
   height: 100vh;
@@ -11,6 +11,7 @@ body {
   flex-direction: column;
 }
 
+/* ---------- HEADER ---------- */
 header {
   background: #282c34;
   padding: 0.75em;
@@ -19,6 +20,7 @@ header {
   border-bottom: 1px solid #333;
 }
 
+/* ---------- ROOT APP ---------- */
 #app-root {
   flex: 1;
   display: flex;
@@ -26,9 +28,7 @@ header {
   overflow: hidden;
 }
 
-/* ------------------------------ */
-/* TOP / BOTTOM SPLIT */
-/* ------------------------------ */
+/* ---------- TOP / BOTTOM SPLIT ---------- */
 #top-area {
   flex: 0 0 65%;
   display: flex;
@@ -39,15 +39,14 @@ header {
 
 #bottom-area {
   flex: 0 0 35%;
-  margin: 0 1em 1em 1em;
   display: flex;
   flex-direction: column;
+  padding: 0 1em 1em 1em;
   gap: 0.5em;
+  overflow: hidden;
 }
 
-/* ------------------------------ */
-/* TOP LEFT / RIGHT PANELS */
-/* ------------------------------ */
+/* ---------- TOP LEFT / RIGHT ---------- */
 #top-left {
   width: 300px;
   flex-shrink: 0;
@@ -63,9 +62,7 @@ header {
   gap: 0.5em;
 }
 
-/* ------------------------------ */
-/* PANELS COMMON */
-/* ------------------------------ */
+/* ---------- PANELS ---------- */
 .panel {
   background: #2b2b2b;
   border-radius: 8px;
@@ -73,7 +70,6 @@ header {
   display: flex;
   flex-direction: column;
   gap: 0.5em;
-  overflow: hidden;
 }
 
 .panel-title {
@@ -82,9 +78,7 @@ header {
   padding-bottom: 0.25em;
 }
 
-/* ------------------------------ */
-/* PROJECT TREE */
-/* ------------------------------ */
+/* ---------- PROJECT TREE ---------- */
 #project-tree {
   font-family: monospace;
   font-size: 0.9em;
@@ -104,15 +98,13 @@ header {
   background: #4a90e2;
 }
 
-/* ------------------------------ */
-/* FILE INFO / PREVIEW */
-/* ------------------------------ */
+/* ---------- FILE INFO / PREVIEW ---------- */
 #file-info {
-  min-height: 100px;
+  min-height: 80px;
   border-bottom: 1px solid #444;
   font-family: monospace;
   font-size: 0.9em;
-  overflow-y: auto;
+  padding: 0.25em;
 }
 
 #file-preview {
@@ -120,14 +112,12 @@ header {
   overflow: auto;
   font-family: monospace;
   font-size: 0.9em;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  background: #1b1b1b;
+  border-radius: 4px;
+  padding: 0.5em;
 }
 
-/* ------------------------------ */
-/* NLP PANEL */
-/* ------------------------------ */
+/* ---------- NLP PANEL ---------- */
 #nlp-log {
   flex: 1;
   background: #1b1b1b;
@@ -143,13 +133,14 @@ header {
   gap: 0.5em;
 }
 
-input {
+input#nlp-command {
   flex: 1;
   padding: 0.5em;
   border-radius: 4px;
   border: none;
   background: #3a3a3a;
   color: #f0f0f0;
+  font-family: monospace;
 }
 
 button {
@@ -165,10 +156,54 @@ button:hover {
   background: #357ab8;
 }
 
-/* ------------------------------ */
-/* IMAGE PREVIEW */
-#file-preview img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+/* ---------- NLP LOG MESSAGES ---------- */
+.chat-message {
+  padding: 2px 4px;
+}
+
+.chat-message.user {
+  color: #ffcc66;
+}
+
+.chat-message.system {
+  color: #a0a0a0;
+}
+
+.chat-message.command {
+  color: #66ccff;
+}
+
+/* ---------- SCROLLBARS ---------- */
+#project-tree::-webkit-scrollbar,
+#file-preview::-webkit-scrollbar,
+#nlp-log::-webkit-scrollbar {
+  width: 8px;
+}
+
+#project-tree::-webkit-scrollbar-thumb,
+#file-preview::-webkit-scrollbar-thumb,
+#nlp-log::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+#project-tree::-webkit-scrollbar-track,
+#file-preview::-webkit-scrollbar-track,
+#nlp-log::-webkit-scrollbar-track {
+  background: #2b2b2b;
+}
+
+/* ---------- RESPONSIVE ---------- */
+@media (max-width: 800px) {
+  #top-area {
+    flex-direction: column;
+  }
+
+  #top-left {
+    width: 100%;
+  }
+
+  #top-right {
+    width: 100%;
+  }
 }
