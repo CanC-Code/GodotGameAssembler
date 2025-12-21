@@ -10,12 +10,12 @@
   #top { display:flex; height:50vh; gap:1em; padding:1em; }
   #file-browser, #asset-preview { flex:1; background:#2b2b2b; padding:1em; border-radius:8px; overflow:auto; }
   #bottom { height:50vh; background:#2b2b2b; padding:1em; border-radius:8px; display:flex; flex-direction:column; }
-  .panel { margin-bottom:1em; }
   button,input,select,textarea { border:none; border-radius:4px; padding:0.5em; margin-top:0.5em; width:100%; }
   #nlp-log { flex:1; overflow-y:auto; background:#1b1b1b; padding:0.5em; border-radius:4px; }
   #nlp-input { display:flex; gap:0.5em; margin-top:0.5em; }
   #nlp-input input { flex:1; }
   h3 { margin-top:0; }
+  #asset-display { margin-top:1em; width:100%; height:300px; background:#1b1b1b; display:flex; align-items:center; justify-content:center; overflow:hidden; border-radius:4px; }
 </style>
 </head>
 <body>
@@ -25,8 +25,6 @@
   <div id="file-browser">
     <h3>Scenes & Nodes</h3>
     <div id="scene-list"></div>
-    <button onclick="collapseScenes()">Collapse/Expand</button>
-    <hr>
     <h3>Scripts</h3>
     <div id="script-list"></div>
   </div>
@@ -35,7 +33,6 @@
     <h3>Asset Preview</h3>
     <div id="asset-info"></div>
     <div id="asset-display"></div>
-    <button onclick="collapseAssets()">Collapse/Expand</button>
   </div>
 </div>
 
@@ -48,18 +45,55 @@
   </div>
 </div>
 
+<script src="libs/three.min.js"></script>
 <script src="libs/jszip.min.js"></script>
 <script src="libs/FileSaver.min.js"></script>
-<script src="libs/three.min.js"></script>
 <script src="libs/nlp_pro.js"></script>
 <script src="godot.js"></script>
 <script src="project_manager.gd"></script>
 <script>
-  // Placeholder for collapsible behavior
-  function collapseScenes(){ /* toggle scene list */ }
-  function collapseAssets(){ /* toggle asset preview */ }
+  // --- Scene & Asset refresh ---
+  function refreshSceneList(){
+    const sceneList = document.getElementById("scene-list");
+    const scriptList = document.getElementById("script-list");
+    sceneList.innerHTML = "";
+    scriptList.innerHTML = "";
+    const scenes = ProjectManager.get_scenes();
+    for(const sceneName in scenes){
+      const sceneDiv = document.createElement("div");
+      sceneDiv.textContent = sceneName;
+      sceneDiv.style.cursor = "pointer";
+      sceneDiv.onclick = ()=>selectScene(sceneName);
+      sceneList.appendChild(sceneDiv);
 
-  // Placeholder for file selection
+      const scripts = scenes[sceneName].scripts;
+      for(const sName in scripts){
+        const sDiv = document.createElement("div");
+        sDiv.textContent = sName;
+        sDiv.style.marginLeft="1em";
+        scriptList.appendChild(sDiv);
+      }
+    }
+  }
+
+  function selectScene(sceneName){
+    const scene = ProjectManager.get_scenes()[sceneName];
+    appendNLP(`Selected scene '${sceneName}' with ${scene.nodes.length} nodes.`);
+  }
+
+  function refreshAssetList(){
+    const assetList = document.getElementById("asset-info");
+    assetList.innerHTML = "";
+    const assets = ProjectManager.list_assets();
+    for(const assetName in assets){
+      const item = document.createElement("div");
+      item.textContent = `${assetName} (${assets[assetName].type})`;
+      item.style.cursor = "pointer";
+      item.onclick = ()=>selectAsset(assetName);
+      assetList.appendChild(item);
+    }
+  }
+
   function selectAsset(assetName){
     const asset = ProjectManager.list_assets()[assetName];
     const display = document.getElementById("asset-display");
@@ -70,11 +104,12 @@
       const img = document.createElement("img");
       img.src = URL.createObjectURL(new Blob([asset.data]));
       img.style.maxWidth="100%";
+      img.style.maxHeight="100%";
       display.appendChild(img);
     } else if(asset.type==="gltf"){
       const container = document.createElement("div");
       container.style.width="100%";
-      container.style.height="300px";
+      container.style.height="100%";
       display.appendChild(container);
 
       const scene = new THREE.Scene();
@@ -94,10 +129,75 @@
         }
         animate();
       });
+    } else if(asset.type==="audio"){
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.src = URL.createObjectURL(new Blob([asset.data]));
+      display.appendChild(audio);
+    } else if(asset.type==="font"){
+      const p = document.createElement("p");
+      p.textContent = `Font: ${assetName}`;
+      display.appendChild(p);
     }
-    // TODO: audio preview, font preview
   }
 
+  // --- NLP Interface ---
+  function sendNLPCommandGUI(){
+    const cmdInput = document.getElementById("nlp-command");
+    const cmd = cmdInput.value.trim();
+    if(!cmd) return;
+    appendNLP(`> ${cmd}`);
+    cmdInput.value="";
+
+    const response = ProjectManager.process_nlp_command(cmd);
+
+    appendNLP(response);
+
+    refreshSceneList();
+    refreshAssetList();
+  }
+
+  function appendNLP(message){
+    const panel = document.getElementById("nlp-log");
+    panel.innerHTML += `<div>${message}</div>`;
+    panel.scrollTop = panel.scrollHeight;
+  }
+
+  // --- Project Export ---
+  async function generateProjectGUI(){
+    const projectName = prompt("Project Name:") || "GodotProject";
+    appendNLP(`Generating project '${projectName}'...`);
+
+    const zip = new JSZip();
+    const scenes = ProjectManager.get_scenes();
+    for(const sceneName in scenes){
+      const scene = scenes[sceneName];
+      const tscnContent = ProjectManager.get_scene_file(sceneName);
+      zip.file(`${projectName}/${sceneName}.tscn`, tscnContent);
+      for(const scriptName in scene.scripts){
+        const code = scene.scripts[scriptName];
+        zip.file(`${projectName}/scripts/${scriptName}.gd`, code);
+      }
+    }
+
+    const assets = ProjectManager.list_assets();
+    for(const assetName in assets){
+      const asset = assets[assetName];
+      const buffer = new Uint8Array(asset.data);
+      zip.file(`${projectName}/assets/${assetName}`, buffer);
+    }
+
+    const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
+    zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
+
+    const content = await zip.generateAsync({type:"blob"});
+    saveAs(content, `${projectName}.zip`);
+    appendNLP(`Project '${projectName}' ZIP ready for download.`);
+  }
+
+  // --- Initialization ---
+  refreshSceneList();
+  refreshAssetList();
 </script>
 </body>
 </html>
