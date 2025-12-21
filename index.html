@@ -5,175 +5,107 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GodotGameAssembler</title>
 <style>
-  body { font-family: sans-serif; margin:0; padding:0; background:#1e1e1e; color:#f0f0f0; }
-  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; }
-  #container { display:flex; flex-wrap:wrap; padding:1em; gap:1em; }
-  .panel { background:#2b2b2b; padding:1em; border-radius:8px; flex:1; min-width:300px; max-width:600px; }
-  button { margin-top:0.5em; padding:0.5em 1em; font-size:1em; border:none; border-radius:4px; cursor:pointer; }
-  input, select, textarea { width:100%; margin-top:0.5em; padding:0.5em; border-radius:4px; border:none; }
-  #nlp-interface { height:150px; overflow-y:auto; background:#1b1b1b; padding:0.5em; border-radius:4px; }
+  /* Basic Reset & Theme */
+  body { margin:0; padding:0; font-family:sans-serif; background:#1e1e1e; color:#f0f0f0; height:100vh; display:flex; flex-direction:column; }
+  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; flex-shrink:0; }
+  
+  /* Workspace Layout */
+  #workspace { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+  #top-workspace { flex:1; display:flex; overflow:hidden; }
+  #bottom-nlp { height:160px; background:#1b1b1b; border-top:1px solid #333; display:flex; flex-direction:column; padding:0.5em; }
+  
+  /* Top Workspace Panels */
+  #file-browser { width:300px; background:#2b2b2b; overflow:auto; padding:0.5em; border-right:1px solid #333; }
+  #asset-preview { flex:1; background:#2b2b2b; overflow:auto; padding:0.5em; }
+
+  /* Tabs */
+  .tabs { display:flex; gap:0.5em; margin-bottom:0.5em; flex-wrap:wrap; }
+  .tab { background:#3a3a3a; padding:0.3em 0.6em; border-radius:4px; cursor:pointer; }
+  .tab.active { background:#555; }
+
+  /* Collapsible sections */
+  .collapsible { background:#3a3a3a; cursor:pointer; padding:0.5em; border-radius:4px; margin-bottom:0.3em; }
+  .content { padding:0.5em; display:none; background:#2b2b2b; border-radius:4px; }
+
+  /* NLP Panel */
+  #nlp-messages { flex:1; overflow-y:auto; margin-bottom:0.5em; }
+  #nlp-command { padding:0.5em; border-radius:4px; border:none; width:100%; margin-bottom:0.5em; }
+  #nlp-send { padding:0.5em 1em; border:none; border-radius:4px; cursor:pointer; }
+
+  /* Buttons */
+  button { padding:0.5em 1em; border:none; border-radius:4px; cursor:pointer; background:#444; color:#f0f0f0; }
+  button:hover { background:#555; }
+
+  /* Responsive tweaks */
+  @media(max-width:768px){
+    #top-workspace { flex-direction:column; }
+    #file-browser { width:100%; height:200px; border-right:none; border-bottom:1px solid #333; }
+    #asset-preview { flex:1; height:200px; }
+  }
 </style>
 </head>
 <body>
+
 <header>GodotGameAssembler</header>
 
-<div id="container">
-  <!-- Scene & Node Manager -->
-  <div class="panel" id="scene-manager">
-    <h3>Scenes & Nodes</h3>
-    <input type="text" id="scene-name" placeholder="Scene name">
-    <button onclick="addSceneGUI()">Add Scene</button>
-    <div id="scene-list"></div>
-    <hr>
-    <input type="text" id="node-name" placeholder="Node name">
-    <select id="node-type">
-      <option>Node2D</option>
-      <option>Sprite</option>
-      <option>Label</option>
-      <option>Control</option>
-      <option>Area2D</option>
-      <option>Camera2D</option>
-    </select>
-    <input type="text" id="parent-name" placeholder="Parent node (optional)">
-    <button onclick="addNodeGUI()">Add Node</button>
-    <div id="node-list"></div>
+<div id="workspace">
+  <!-- Top Workspace -->
+  <div id="top-workspace">
+    <!-- Left File Browser -->
+    <div id="file-browser">
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('files')">Files</div>
+        <div class="tab" onclick="switchTab('scenes')">Scenes</div>
+        <div class="tab" onclick="switchTab('assets')">Assets</div>
+        <div class="tab" onclick="switchTab('exports')">Exports</div>
+      </div>
+      <div id="files-content" class="content" style="display:block;">File list...</div>
+      <div id="scenes-content" class="content">Scene list...</div>
+      <div id="assets-content" class="content">Asset list...</div>
+      <div id="exports-content" class="content">Export list...</div>
+    </div>
+
+    <!-- Right Asset Preview / Inspector -->
+    <div id="asset-preview">
+      <h3>Inspector / Preview</h3>
+      <div id="preview-content">Select an item to preview</div>
+    </div>
   </div>
 
-  <!-- Asset Manager -->
-  <div class="panel" id="asset-manager">
-    <h3>Assets</h3>
-    <input type="file" id="asset-upload" multiple>
-    <select id="asset-type">
-      <option value="texture">Texture</option>
-      <option value="gltf">GLTF Model</option>
-      <option value="audio">Audio</option>
-      <option value="font">Font</option>
-    </select>
-    <button onclick="uploadAssetsGUI()">Upload Asset(s)</button>
-    <ul id="asset-list"></ul>
-  </div>
-
-  <!-- Project Export -->
-  <div class="panel" id="export-panel">
-    <h3>Export Project</h3>
-    <input type="text" id="project-name" placeholder="Project Name">
-    <button onclick="generateProjectGUI()">Generate & Download ZIP</button>
-    <div id="export-status"></div>
-  </div>
-
-  <!-- NLP Interface -->
-  <div class="panel" id="nlp-panel">
-    <h3>NLP Interface</h3>
-    <div id="nlp-interface"></div>
+  <!-- Bottom NLP Panel -->
+  <div id="bottom-nlp">
+    <div id="nlp-messages"></div>
     <input type="text" id="nlp-command" placeholder="Type command here">
-    <button onclick="sendNLPCommandGUI()">Send</button>
+    <button id="nlp-send" onclick="sendNLPCommandGUI()">Send</button>
   </div>
 </div>
 
-<!-- Local Libraries -->
-<script src="libs/jszip.min.js"></script>
-<script src="libs/FileSaver.min.js"></script>
-<script src="godot.js"></script>
-
 <script>
-  // --- GUI functions connecting to Godot backend ---
-
-  function addSceneGUI() {
-    const name = document.getElementById("scene-name").value.trim();
-    if(!name) return alert("Enter scene name");
-    ProjectManager.add_scene(name);
-    document.getElementById("scene-list").innerHTML += `<div>${name}</div>`;
-    appendNLP(`Scene '${name}' added.`);
+  // --- Tab switching ---
+  function switchTab(tab){
+    const tabs = ['files','scenes','assets','exports'];
+    tabs.forEach(t => {
+      document.getElementById(t+'-content').style.display = (t===tab) ? 'block' : 'none';
+    });
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    event.target.classList.add('active');
   }
 
-  function addNodeGUI() {
-    const nodeName = document.getElementById("node-name").value.trim();
-    const nodeType = document.getElementById("node-type").value;
-    const parent = document.getElementById("parent-name").value.trim();
-    const sceneList = document.getElementById("scene-list").children;
-    if(sceneList.length === 0) return alert("Add a scene first");
-    const sceneName = sceneList[sceneList.length-1].innerText;
-    ProjectManager.add_node(sceneName, nodeName, nodeType, parent);
-    document.getElementById("node-list").innerHTML += `<div>${nodeName} (${nodeType})</div>`;
-    appendNLP(`Node '${nodeName}' of type '${nodeType}' added to scene '${sceneName}'.`);
-  }
+  // --- Collapsible sections ---
+  document.querySelectorAll('.collapsible').forEach(c => {
+    c.addEventListener('click', function(){
+      this.nextElementSibling.style.display = this.nextElementSibling.style.display==='block'?'none':'block';
+    });
+  });
 
-  function uploadAssetsGUI() {
-    const files = document.getElementById("asset-upload").files;
-    const type = document.getElementById("asset-type").value;
-    const list = document.getElementById("asset-list");
-    if(files.length === 0) return alert("Select files to upload");
-
-    for(let file of files){
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const arrayBuffer = e.target.result;
-        const uint8 = new Uint8Array(arrayBuffer);
-        ProjectManager.upload_asset(file.name, type, uint8);
-        list.innerHTML += `<li>${file.name} (${type})</li>`;
-        appendNLP(`Asset '${file.name}' uploaded as ${type}.`);
-      };
-      reader.readAsArrayBuffer(file);
-    }
-  }
-
-  async function generateProjectGUI() {
-    const projectName = document.getElementById("project-name").value.trim() || "GodotProject";
-    const status = document.getElementById("export-status");
-    status.innerText = "Generating project ZIP...";
-    appendNLP(`Generating project '${projectName}'...`);
-
-    const zip = new JSZip();
-
-    // --- Add Scenes & Scripts ---
-    const scenes = ProjectManager.get_scenes();
-    for (const sceneName in scenes) {
-      const scene = scenes[sceneName];
-      const tscnContent = ProjectManager.get_scene_file(sceneName);
-      zip.file(`${projectName}/${sceneName}.tscn`, tscnContent);
-      for (const scriptName in scene.scripts) {
-        const code = scene.scripts[scriptName];
-        zip.file(`${projectName}/scripts/${scriptName}.gd`, code);
-      }
-    }
-
-    // --- Add Assets ---
-    const assets = ProjectManager.list_assets();
-    for (const assetName in assets) {
-      const asset = assets[assetName];
-      const buffer = new Uint8Array(asset.data);
-      zip.file(`${projectName}/assets/${assetName}`, buffer);
-    }
-
-    // --- Add Made-by Slide ---
-    const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
-    zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
-
-    // --- Generate ZIP and trigger download ---
-    const content = await zip.generateAsync({ type: "blob" });
-    saveAs(content, `${projectName}.zip`);
-    status.innerText = `Project '${projectName}' ZIP ready for download.`;
-    appendNLP(`Project '${projectName}' generated and ready for download.`);
-  }
-
-  function sendNLPCommandGUI() {
-    const cmd = document.getElementById("nlp-command").value.trim();
-    if(!cmd) return;
-    appendNLP(`> ${cmd}`);
-    document.getElementById("nlp-command").value = "";
-    const response = ProjectManager.process_nlp_command(cmd);
-    appendNLP(response);
-  }
-
-  function appendNLP(message) {
-    const panel = document.getElementById("nlp-interface");
-    panel.innerHTML += `<div>${message}</div>`;
+  // --- Placeholder NLP functions ---
+  function appendNLP(msg){
+    const panel = document.getElementById('nlp-messages');
+    panel.innerHTML += `<div>${msg}</div>`;
     panel.scrollTop = panel.scrollHeight;
   }
-
-  // Initialize Godot Runtime (assumes instance is available)
-  let godotInstance = null; 
-  if(window.godotInstance) initGodotRuntime(window.godotInstance);
+  function sendNLPCommandGUI(){ appendNLP('> '+document.getElementById('nlp-command').value); document.getElementById('nlp-command').value=''; }
 </script>
+
 </body>
 </html>
