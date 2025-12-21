@@ -1,101 +1,84 @@
 # project_manager.gd
-# Author: CCVO
-# Purpose: Integrates HTML GUI commands with GodotGameAssembler backend modules
-# Provides real-time project generation and asset management
-
+# Singleton / Autoload
 extends Node
 
-class_name ProjectManager
+# --- Data Structures ---
+var scenes = {} # {scene_name: {nodes: [], scripts: {script_name: code}}}
+var assets = {} # {filename: {type: "texture/gltf/audio", data: PoolByteArray}}
 
-# --- Core Modules ---
-var project_graph := preload("res://project_graph/project_graph.gd").new()
-var scene_composer := preload("res://scene_composer/generator.gd").new()
-var asset_handler := preload("res://asset_manager/asset_handler.gd").new()
-var zip_exporter := preload("res://export/zip_exporter.gd").new()
+# --- Scene Management ---
+func add_scene(scene_name: String) -> void:
+	if scenes.has(scene_name):
+		return
+	scenes[scene_name] = {"nodes": [], "scripts": {}}
 
-func _ready():
-    # Assign references
-    scene_composer.project_graph = project_graph
-    zip_exporter.project_graph = project_graph
-    zip_exporter.scene_composer = scene_composer
-    zip_exporter.asset_handler = asset_handler
+func add_node(scene_name: String, node_name: String, node_type: String, parent_name: String="") -> void:
+	if not scenes.has(scene_name):
+		return
+	var node_data = {
+		"name": node_name,
+		"type": node_type,
+		"parent": parent_name
+	}
+	scenes[scene_name]["nodes"].append(node_data)
 
-# ------------------------------
-# Scene & Node API
-# ------------------------------
+func add_script(scene_name: String, script_name: String, code: String) -> void:
+	if not scenes.has(scene_name):
+		return
+	scenes[scene_name]["scripts"][script_name] = code
 
-func add_scene(scene_name: String) -> bool:
-    return project_graph.add_scene(scene_name)
+# --- Asset Management ---
+func upload_asset(filename: String, asset_type: String, data: PoolByteArray) -> void:
+	assets[filename] = {"type": asset_type, "data": data}
 
-func add_node(scene_name: String, node_name: String, node_type: String, parent: String="") -> bool:
-    return project_graph.add_node(scene_name, node_name, node_type, parent)
+func list_assets() -> Dictionary:
+	return assets
 
-func add_script(scene_name: String, script_name: String, code: String) -> bool:
-    return project_graph.add_script(scene_name, script_name, code)
-
-# ------------------------------
-# Asset API
-# ------------------------------
-
-func upload_asset(asset_path: String, asset_type: String, asset_bytes: PoolByteArray) -> bool:
-    return asset_handler.add_asset(asset_path, asset_type, asset_bytes)
-
-func remove_asset(asset_path: String) -> bool:
-    return asset_handler.remove_asset(asset_path)
-
-func list_assets() -> Array:
-    return asset_handler.list_assets()
-
-# ------------------------------
-# Export API
-# ------------------------------
-
-func generate_project(output_zip_path: String) -> void:
-    zip_exporter.connect("export_started", Callable(self, "_on_export_started"))
-    zip_exporter.connect("export_progress", Callable(self, "_on_export_progress"))
-    zip_exporter.connect("export_finished", Callable(self, "_on_export_finished"))
-    zip_exporter.connect("export_failed", Callable(self, "_on_export_failed"))
-    zip_exporter.export_project(output_zip_path)
-
-# ------------------------------
-# Export Signals
-# ------------------------------
-
-func _on_export_started():
-    print("Export started...")
-
-func _on_export_progress(progress: float):
-    print("Export progress: %d%%" % int(progress*100))
-
-func _on_export_finished(zip_path: String):
-    print("Export finished: %s" % zip_path)
-
-func _on_export_failed(reason: String):
-    push_error("Export failed: %s" % reason)
-
-# ------------------------------
-# NLP API
-# ------------------------------
-
+# --- NLP Command Processing ---
 func process_nlp_command(command: String) -> String:
-    command = command.to_lower()
-    var response = ""
+	# Example: interpret commands like "Add a sprite node"
+	var cmd = command.strip_edges().to_lower()
+	if cmd.begins_with("add scene "):
+		var scene_name = command.substr(10)
+		add_scene(scene_name)
+		return "Scene '%s' added via NLP." % scene_name
+	elif cmd.begins_with("add node "):
+		# Example: "add node Player of type Sprite to Scene1"
+		# Simple parser; in practice expand
+		return "Node added via NLP (parsing not implemented)."
+	else:
+		return "Command not recognized."
 
-    if command.find("snake") >= 0:
-        add_scene("SnakeGame")
-        response = "Template for 'Snake' game created. Nodes and scripts ready for customization."
-    elif command.find("thumbstick") >= 0:
-        var scenes = project_graph.scenes.keys()
-        if scenes.size() > 0:
-            add_node(scenes[0], "VirtualJoystick", "Control")
-            response = "Thumbstick added to scene '%s'." % scenes[0]
-    elif command.find("tic tac toe") >= 0:
-        add_scene("TicTacToe")
-        response = "Template for 'Tic Tac Toe' created."
-    elif command.find("rpg") >= 0:
-        add_scene("RPG")
-        response = "RPG base project created."
-    else:
-        response = "Command recognized but no automatic action available."
+# --- Project Export Methods for JS ZIP ---
+func get_scenes() -> Dictionary:
+	# Returns a copy of the scenes dictionary
+	return scenes.duplicate(true)
 
-    return response
+func get_scene_file(scene_name: String) -> String:
+	if not scenes.has(scene_name):
+		return ""
+	var tscn_text = "[gd_scene load_steps=2 format=2]\n\n"
+	var scene = scenes[scene_name]
+	# Add nodes
+	for node in scene["nodes"]:
+		tscn_text += '[node name="%s" type="%s" parent="%s"]\n' % [
+			node["name"], node["type"], node["parent"]
+		]
+	tscn_text += "\n"
+	# Add scripts
+	for script_name in scene["scripts"]:
+		tscn_text += '[script name="%s"]\n%s\n\n' % [script_name, scene["scripts"][script_name]]
+	return tscn_text
+
+# --- Example: Made-by slide injected automatically ---
+func inject_made_by(scene_name: String="MadeByIntro") -> void:
+	if not scenes.has(scene_name):
+		add_scene(scene_name)
+	add_node(scene_name, "MadeByLabel", "Label")
+	var code = 'text = "Made with GodotGameAssembler by CCVO"'
+	add_script(scene_name, "MadeByIntro.gd", code)
+
+# --- Utility Functions ---
+func reset_project() -> void:
+	scenes.clear()
+	assets.clear()
