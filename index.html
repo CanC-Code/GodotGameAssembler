@@ -5,107 +5,99 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GodotGameAssembler</title>
 <style>
-  /* Basic Reset & Theme */
-  body { margin:0; padding:0; font-family:sans-serif; background:#1e1e1e; color:#f0f0f0; height:100vh; display:flex; flex-direction:column; }
-  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; flex-shrink:0; }
-  
-  /* Workspace Layout */
-  #workspace { flex:1; display:flex; flex-direction:column; overflow:hidden; }
-  #top-workspace { flex:1; display:flex; overflow:hidden; }
-  #bottom-nlp { height:160px; background:#1b1b1b; border-top:1px solid #333; display:flex; flex-direction:column; padding:0.5em; }
-  
-  /* Top Workspace Panels */
-  #file-browser { width:300px; background:#2b2b2b; overflow:auto; padding:0.5em; border-right:1px solid #333; }
-  #asset-preview { flex:1; background:#2b2b2b; overflow:auto; padding:0.5em; }
-
-  /* Tabs */
-  .tabs { display:flex; gap:0.5em; margin-bottom:0.5em; flex-wrap:wrap; }
-  .tab { background:#3a3a3a; padding:0.3em 0.6em; border-radius:4px; cursor:pointer; }
-  .tab.active { background:#555; }
-
-  /* Collapsible sections */
-  .collapsible { background:#3a3a3a; cursor:pointer; padding:0.5em; border-radius:4px; margin-bottom:0.3em; }
-  .content { padding:0.5em; display:none; background:#2b2b2b; border-radius:4px; }
-
-  /* NLP Panel */
-  #nlp-messages { flex:1; overflow-y:auto; margin-bottom:0.5em; }
-  #nlp-command { padding:0.5em; border-radius:4px; border:none; width:100%; margin-bottom:0.5em; }
-  #nlp-send { padding:0.5em 1em; border:none; border-radius:4px; cursor:pointer; }
-
-  /* Buttons */
-  button { padding:0.5em 1em; border:none; border-radius:4px; cursor:pointer; background:#444; color:#f0f0f0; }
-  button:hover { background:#555; }
-
-  /* Responsive tweaks */
-  @media(max-width:768px){
-    #top-workspace { flex-direction:column; }
-    #file-browser { width:100%; height:200px; border-right:none; border-bottom:1px solid #333; }
-    #asset-preview { flex:1; height:200px; }
-  }
+  body { margin:0; font-family:sans-serif; background:#1e1e1e; color:#f0f0f0; }
+  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; }
+  #top { display:flex; height:50vh; gap:1em; padding:1em; }
+  #file-browser, #asset-preview { flex:1; background:#2b2b2b; padding:1em; border-radius:8px; overflow:auto; }
+  #bottom { height:50vh; background:#2b2b2b; padding:1em; border-radius:8px; display:flex; flex-direction:column; }
+  .panel { margin-bottom:1em; }
+  button,input,select,textarea { border:none; border-radius:4px; padding:0.5em; margin-top:0.5em; width:100%; }
+  #nlp-log { flex:1; overflow-y:auto; background:#1b1b1b; padding:0.5em; border-radius:4px; }
+  #nlp-input { display:flex; gap:0.5em; margin-top:0.5em; }
+  #nlp-input input { flex:1; }
+  h3 { margin-top:0; }
 </style>
 </head>
 <body>
-
 <header>GodotGameAssembler</header>
 
-<div id="workspace">
-  <!-- Top Workspace -->
-  <div id="top-workspace">
-    <!-- Left File Browser -->
-    <div id="file-browser">
-      <div class="tabs">
-        <div class="tab active" onclick="switchTab('files')">Files</div>
-        <div class="tab" onclick="switchTab('scenes')">Scenes</div>
-        <div class="tab" onclick="switchTab('assets')">Assets</div>
-        <div class="tab" onclick="switchTab('exports')">Exports</div>
-      </div>
-      <div id="files-content" class="content" style="display:block;">File list...</div>
-      <div id="scenes-content" class="content">Scene list...</div>
-      <div id="assets-content" class="content">Asset list...</div>
-      <div id="exports-content" class="content">Export list...</div>
-    </div>
-
-    <!-- Right Asset Preview / Inspector -->
-    <div id="asset-preview">
-      <h3>Inspector / Preview</h3>
-      <div id="preview-content">Select an item to preview</div>
-    </div>
+<div id="top">
+  <div id="file-browser">
+    <h3>Scenes & Nodes</h3>
+    <div id="scene-list"></div>
+    <button onclick="collapseScenes()">Collapse/Expand</button>
+    <hr>
+    <h3>Scripts</h3>
+    <div id="script-list"></div>
   </div>
 
-  <!-- Bottom NLP Panel -->
-  <div id="bottom-nlp">
-    <div id="nlp-messages"></div>
-    <input type="text" id="nlp-command" placeholder="Type command here">
-    <button id="nlp-send" onclick="sendNLPCommandGUI()">Send</button>
+  <div id="asset-preview">
+    <h3>Asset Preview</h3>
+    <div id="asset-info"></div>
+    <div id="asset-display"></div>
+    <button onclick="collapseAssets()">Collapse/Expand</button>
   </div>
 </div>
 
+<div id="bottom">
+  <h3>NLP Interface</h3>
+  <div id="nlp-log"></div>
+  <div id="nlp-input">
+    <input type="text" id="nlp-command" placeholder="Type command here">
+    <button onclick="sendNLPCommandGUI()">Send</button>
+  </div>
+</div>
+
+<script src="libs/jszip.min.js"></script>
+<script src="libs/FileSaver.min.js"></script>
+<script src="libs/three.min.js"></script>
+<script src="libs/nlp_pro.js"></script>
+<script src="godot.js"></script>
+<script src="project_manager.gd"></script>
 <script>
-  // --- Tab switching ---
-  function switchTab(tab){
-    const tabs = ['files','scenes','assets','exports'];
-    tabs.forEach(t => {
-      document.getElementById(t+'-content').style.display = (t===tab) ? 'block' : 'none';
-    });
-    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
-    event.target.classList.add('active');
+  // Placeholder for collapsible behavior
+  function collapseScenes(){ /* toggle scene list */ }
+  function collapseAssets(){ /* toggle asset preview */ }
+
+  // Placeholder for file selection
+  function selectAsset(assetName){
+    const asset = ProjectManager.list_assets()[assetName];
+    const display = document.getElementById("asset-display");
+    display.innerHTML = "";
+    if(!asset) return;
+
+    if(asset.type==="texture"){
+      const img = document.createElement("img");
+      img.src = URL.createObjectURL(new Blob([asset.data]));
+      img.style.maxWidth="100%";
+      display.appendChild(img);
+    } else if(asset.type==="gltf"){
+      const container = document.createElement("div");
+      container.style.width="100%";
+      container.style.height="300px";
+      display.appendChild(container);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(75, container.offsetWidth/container.offsetHeight,0.1,1000);
+      const renderer = new THREE.WebGLRenderer({antialias:true});
+      renderer.setSize(container.offsetWidth,container.offsetHeight);
+      container.appendChild(renderer.domElement);
+
+      const loader = new THREE.GLTFLoader();
+      const blob = new Blob([asset.data]);
+      loader.parse(blob, "", function(gltf){
+        scene.add(gltf.scene);
+        camera.position.z = 5;
+        function animate(){
+          requestAnimationFrame(animate);
+          renderer.render(scene,camera);
+        }
+        animate();
+      });
+    }
+    // TODO: audio preview, font preview
   }
 
-  // --- Collapsible sections ---
-  document.querySelectorAll('.collapsible').forEach(c => {
-    c.addEventListener('click', function(){
-      this.nextElementSibling.style.display = this.nextElementSibling.style.display==='block'?'none':'block';
-    });
-  });
-
-  // --- Placeholder NLP functions ---
-  function appendNLP(msg){
-    const panel = document.getElementById('nlp-messages');
-    panel.innerHTML += `<div>${msg}</div>`;
-    panel.scrollTop = panel.scrollHeight;
-  }
-  function sendNLPCommandGUI(){ appendNLP('> '+document.getElementById('nlp-command').value); document.getElementById('nlp-command').value=''; }
 </script>
-
 </body>
 </html>
