@@ -1,3 +1,4 @@
+/* ---------- BODY & ROOT ---------- */
 body {
   margin: 0;
   height: 100vh;
@@ -24,7 +25,6 @@ header {
 }
 
 /* ---------- TOP / BOTTOM SPLIT ---------- */
-
 #top-area {
   flex: 0 0 65%;
   display: flex;
@@ -38,23 +38,27 @@ header {
   margin: 0 1em 1em 1em;
   display: flex;
   flex-direction: column;
+  gap: 0.5em;
+  overflow: hidden;
 }
 
 /* ---------- TOP LEFT / RIGHT ---------- */
-
 #top-left {
   width: 300px;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
 }
 
 #top-right {
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* ---------- PANELS ---------- */
-
 .panel {
   background: #2b2b2b;
   border-radius: 8px;
@@ -71,7 +75,6 @@ header {
 }
 
 /* ---------- PROJECT TREE ---------- */
-
 #project-tree {
   font-family: monospace;
   font-size: 0.9em;
@@ -91,7 +94,6 @@ header {
 }
 
 /* ---------- FILE INFO / PREVIEW ---------- */
-
 #file-info {
   min-height: 100px;
   border-bottom: 1px solid #444;
@@ -107,7 +109,6 @@ header {
 }
 
 /* ---------- NLP ---------- */
-
 #nlp-log {
   flex: 1;
   background: #1b1b1b;
@@ -130,6 +131,7 @@ input {
   border: none;
   background: #3a3a3a;
   color: #f0f0f0;
+  font-family: monospace;
 }
 
 button {
