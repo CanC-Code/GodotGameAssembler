@@ -1,4 +1,6 @@
-/* ---------- BODY & ROOT ---------- */
+/* ------------------------------ */
+/* GLOBAL STYLES */
+/* ------------------------------ */
 body {
   margin: 0;
   height: 100vh;
@@ -24,7 +26,9 @@ header {
   overflow: hidden;
 }
 
-/* ---------- TOP / BOTTOM SPLIT ---------- */
+/* ------------------------------ */
+/* TOP / BOTTOM SPLIT */
+/* ------------------------------ */
 #top-area {
   flex: 0 0 65%;
   display: flex;
@@ -39,26 +43,29 @@ header {
   display: flex;
   flex-direction: column;
   gap: 0.5em;
-  overflow: hidden;
 }
 
-/* ---------- TOP LEFT / RIGHT ---------- */
+/* ------------------------------ */
+/* TOP LEFT / RIGHT PANELS */
+/* ------------------------------ */
 #top-left {
   width: 300px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  gap: 0.5em;
 }
 
 #top-right {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  gap: 0.5em;
 }
 
-/* ---------- PANELS ---------- */
+/* ------------------------------ */
+/* PANELS COMMON */
+/* ------------------------------ */
 .panel {
   background: #2b2b2b;
   border-radius: 8px;
@@ -66,6 +73,7 @@ header {
   display: flex;
   flex-direction: column;
   gap: 0.5em;
+  overflow: hidden;
 }
 
 .panel-title {
@@ -74,10 +82,13 @@ header {
   padding-bottom: 0.25em;
 }
 
-/* ---------- PROJECT TREE ---------- */
+/* ------------------------------ */
+/* PROJECT TREE */
+/* ------------------------------ */
 #project-tree {
   font-family: monospace;
   font-size: 0.9em;
+  overflow-y: auto;
 }
 
 .tree-item {
@@ -93,12 +104,15 @@ header {
   background: #4a90e2;
 }
 
-/* ---------- FILE INFO / PREVIEW ---------- */
+/* ------------------------------ */
+/* FILE INFO / PREVIEW */
+/* ------------------------------ */
 #file-info {
   min-height: 100px;
   border-bottom: 1px solid #444;
   font-family: monospace;
   font-size: 0.9em;
+  overflow-y: auto;
 }
 
 #file-preview {
@@ -106,37 +120,14 @@ header {
   overflow: auto;
   font-family: monospace;
   font-size: 0.9em;
-}
-
-/* ---------- NLP ---------- */
-.nlp-input-row {
   display: flex;
-  gap: 0.5em;
+  justify-content: center;
+  align-items: center;
 }
 
-#nlp-command {
-  flex: 1;
-  padding: 0.5em;
-  border-radius: 4px;
-  border: none;
-  background: #3a3a3a;
-  color: #f0f0f0;
-  font-family: monospace;
-}
-
-#nlp-send {
-  padding: 0.5em 1em;
-  border: none;
-  border-radius: 4px;
-  background: #4a90e2;
-  color: white;
-  cursor: pointer;
-}
-
-#nlp-send:hover {
-  background: #357ab8;
-}
-
+/* ------------------------------ */
+/* NLP PANEL */
+/* ------------------------------ */
 #nlp-log {
   flex: 1;
   background: #1b1b1b;
@@ -145,4 +136,39 @@ header {
   overflow-y: auto;
   font-family: monospace;
   font-size: 0.9em;
+}
+
+.nlp-input-row {
+  display: flex;
+  gap: 0.5em;
+}
+
+input {
+  flex: 1;
+  padding: 0.5em;
+  border-radius: 4px;
+  border: none;
+  background: #3a3a3a;
+  color: #f0f0f0;
+}
+
+button {
+  padding: 0.5em 1em;
+  border: none;
+  border-radius: 4px;
+  background: #4a90e2;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #357ab8;
+}
+
+/* ------------------------------ */
+/* IMAGE PREVIEW */
+#file-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
