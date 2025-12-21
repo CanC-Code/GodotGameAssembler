@@ -1,7 +1,7 @@
 // libs/godot.js
 // Author: CCVO
 // Purpose: Guided interactive chat for GodotGameAssembler
-// Features: proactive prompts, NLP command handling, game creation guidance, multi-step workflow
+// Features: proactive prompts, NLP command handling, game creation guidance
 
 (function () {
 
@@ -12,7 +12,6 @@
     const nlpInput = document.getElementById("nlp-command");
     const nlpSend = document.getElementById("nlp-send");
     const nlpLog = document.getElementById("nlp-log");
-    const pm = window.ProjectManager;
 
     // ------------------------------
     // Conversation State
@@ -20,7 +19,7 @@
     const convo = {
         gameNamed: false,
         conceptSet: false,
-        firstSceneCreated: false,
+        sceneCreated: false,
         nextPrompt: "name_game", // states: name_game, set_concept, create_scene, idle
     };
 
@@ -31,11 +30,11 @@
 
     async function handleInput(userInput) {
         logMessage(`> ${userInput}`);
-        const text = userInput.trim();
 
-        // ------------------------------
-        // Naming the Game
-        // ------------------------------
+        const text = userInput.trim();
+        const pm = window.ProjectManager;
+
+        // --- Step 1: Name Game ---
         if (!convo.gameNamed && convo.nextPrompt === "name_game") {
             const m = text.match(/^name\s+game\s+"?([^"]+)"?/i);
             if (m) {
@@ -52,9 +51,7 @@
             }
         }
 
-        // ------------------------------
-        // Setting Game Concept
-        // ------------------------------
+        // --- Step 2: Set Concept ---
         if (!convo.conceptSet && convo.nextPrompt === "set_concept") {
             const m = text.match(/^set\s+concept\s+"?([^"]+)"?/i);
             if (m) {
@@ -71,19 +68,17 @@
             }
         }
 
-        // ------------------------------
-        // Creating First Scene
-        // ------------------------------
-        if (!convo.firstSceneCreated && convo.nextPrompt === "create_scene") {
+        // --- Step 3: Create Scene ---
+        if (!convo.sceneCreated && convo.nextPrompt === "create_scene") {
             const m = text.match(/^create\s+scene\s+(\w+)/i);
             if (m) {
                 const sceneName = m[1];
                 const result = await pm.process_nlp_command(text);
                 logMessage(result);
-                convo.firstSceneCreated = true;
+                convo.sceneCreated = true;
                 convo.nextPrompt = "idle";
-                logMessage("Scene created. You can now add nodes, UI, buttons, scripts, cameras, physics, and more.");
-                logMessage("Type 'help' to see all available commands.");
+                logMessage("Scene created. You can now add nodes, buttons, thumbsticks, scripts, or more scenes.");
+                logMessage("Type 'help' for commands. You can also import or export your project.");
                 return;
             } else {
                 logMessage("Please create a scene using: create scene <SceneName>");
@@ -91,17 +86,10 @@
             }
         }
 
-        // ------------------------------
-        // Default NLP Processing / Guidance
-        // ------------------------------
-        // This handles all remaining commands dynamically, including node addition, UI, thumbsticks, physics, etc.
+        // --- Default: Pass to ProjectManager NLP ---
         const result = await pm.process_nlp_command(text);
         logMessage(result);
-
-        // Suggest next guided step if project is minimal
-        if (!convo.firstSceneCreated && convo.gameNamed && convo.conceptSet) {
-            logMessage("Tip: create your first scene to start building your game.");
-        }
+        logMessage("Tip: You can create scenes, add nodes/buttons, attach scripts, import/export projects, or type 'help'.");
     }
 
     function sendNLPCommandGUI() {
@@ -111,20 +99,18 @@
         handleInput(cmd);
     }
 
-    // ------------------------------
-    // Event Listeners
-    // ------------------------------
+    // --- Event listeners ---
     nlpSend.addEventListener("click", sendNLPCommandGUI);
     nlpInput.addEventListener("keydown", (e) => {
         if (e.key === "Enter") sendNLPCommandGUI();
     });
 
     // ------------------------------
-    // Initial Chat Prompt
+    // Initial prompt
     // ------------------------------
-    logMessage("Hello! What would you like to do?");
+    logMessage("Hello! Welcome to Godot Game Assembler.");
+    logMessage("What would you like to do?");
     logMessage("Start by naming your game: name game \"<Name>\"");
-    logMessage("I will guide you through concept, scene creation, nodes, UI, physics, and full game features.");
 
     console.log("Godot interactive chat initialized.");
 
