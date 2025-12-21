@@ -1,81 +1,104 @@
 // project_manager.gd
-// GodotGameAssembler Project Manager
+// Handles scenes, nodes, scripts, assets, and NLP commands
 
-const ProjectManager = (function(){
-
-  const scenes = {};   // sceneName => { nodes: [], scripts: {} }
-  const assets = {};   // assetName => { type, data }
+const ProjectManager = {
+  scenes: {},
+  assets: {},
 
   // --- Scene Management ---
-  function add_scene(name){
-    if(!name || scenes[name]) return;
-    scenes[name] = { nodes: [], scripts: {} };
-  }
+  add_scene: function(name){
+    if(this.scenes[name]) return `Scene '${name}' already exists.`;
+    this.scenes[name] = { nodes: [], scripts: {} };
+    return `Scene '${name}' created.`;
+  },
 
-  function add_node(sceneName,nodeName,nodeType,parent=""){
-    if(!scenes[sceneName]) add_scene(sceneName);
-    scenes[sceneName].nodes.push({ name: nodeName, type: nodeType, parent: parent, scripts: [] });
-  }
+  add_node: function(sceneName, nodeName, nodeType, parent=""){
+    const scene = this.scenes[sceneName];
+    if(!scene) return `Scene '${sceneName}' does not exist.`;
+    scene.nodes.push({ name: nodeName, type: nodeType, parent: parent });
+    return `Node '${nodeName}' (${nodeType}) added to scene '${sceneName}'.`;
+  },
 
-  function add_script(sceneName,scriptName,code){
-    if(!scenes[sceneName]) return;
-    scenes[sceneName].scripts[scriptName] = code;
+  add_script: function(sceneName, scriptName, code){
+    const scene = this.scenes[sceneName];
+    if(!scene) return `Scene '${sceneName}' does not exist.`;
+    scene.scripts[scriptName] = code;
+    return `Script '${scriptName}' added to scene '${sceneName}'.`;
+  },
 
-    // Attach script to node if exists
-    const node = scenes[sceneName].nodes.find(n=>n.name === scriptName.split(".")[0]);
-    if(node) node.scripts.push(scriptName);
-  }
+  get_scenes: function(){
+    return this.scenes;
+  },
 
-  function get_scenes(){ return JSON.parse(JSON.stringify(scenes)); }
-
-  function get_scene_file(sceneName){
-    if(!scenes[sceneName]) return "";
+  get_scene_file: function(sceneName){
+    const scene = this.scenes[sceneName];
+    if(!scene) return "";
     let content = `[gd_scene load_steps=2 format=2]\n`;
-    scenes[sceneName].nodes.forEach(node=>{
+    scene.nodes.forEach(node=>{
       content += `[node name="${node.name}" type="${node.type}" parent="${node.parent}"]\n`;
-      if(node.scripts.length > 0){
-        node.scripts.forEach(s=>content += `script = "res://scripts/${s}"\n`);
-      }
     });
     return content;
-  }
+  },
 
   // --- Asset Management ---
-  function upload_asset(name,type,data){
-    assets[name] = { type, data };
-  }
+  upload_asset: function(name, type, data){
+    this.assets[name] = { type: type, data: data };
+    return `Asset '${name}' uploaded as ${type}.`;
+  },
 
-  function list_assets(){ return JSON.parse(JSON.stringify(assets)); }
+  list_assets: function(){
+    return this.assets;
+  },
 
-  // --- NLP Command Interface ---
-  function process_nlp_command(cmd){
-    if(typeof NLP !== "undefined"){
-      const plan = NLP.interpret(cmd);
-      plan.scenes.forEach(scene => add_scene(scene));
-      for(let sceneName in plan.nodes){
-        plan.nodes[sceneName].forEach(node=>{
-          add_node(sceneName,node.name,node.type,"");
-          if(node.scripts){
-            node.scripts.forEach(script=>{
-              add_script(sceneName,script.name,script.code);
-            });
-          }
-        });
-      }
-      return `Project plan applied: ${plan.scenes.length} scene(s) added.`;
-    } else {
-      return "NLP module not loaded.";
+  get_asset: function(name){
+    return this.assets[name];
+  },
+
+  // --- NLP Command Handling ---
+  process_nlp_command: function(command){
+    command = command.toLowerCase();
+
+    // Example: create a new scene
+    if(command.startsWith("create scene ")){
+      const name = command.replace("create scene ","").trim();
+      return this.add_scene(name);
     }
-  }
 
-  return {
-    add_scene,
-    add_node,
-    add_script,
-    get_scenes,
-    get_scene_file,
-    upload_asset,
-    list_assets,
-    process_nlp_command
-  };
-})();
+    // Example: add node
+    if(command.startsWith("add node ")){
+      // Format: add node <name> as <type> to <scene>
+      const regex = /add node (\S+) as (\S+) to (\S+)/;
+      const match = command.match(regex);
+      if(match){
+        const [, nodeName, nodeType, sceneName] = match;
+        return this.add_node(sceneName, nodeName, nodeType);
+      }
+      return "Invalid add node syntax. Use: add node <name> as <type> to <scene>";
+    }
+
+    // Example: add script
+    if(command.startsWith("add script ")){
+      // Format: add script <scriptName> to <scene>
+      const regex = /add script (\S+) to (\S+)/;
+      const match = command.match(regex);
+      if(match){
+        const [, scriptName, sceneName] = match;
+        return this.add_script(sceneName, scriptName, "# Your code here\n");
+      }
+      return "Invalid add script syntax. Use: add script <name> to <scene>";
+    }
+
+    // Example: upload asset (stub)
+    if(command.startsWith("upload asset ")){
+      return "Use GUI to upload assets in browser.";
+    }
+
+    // Example: generate project
+    if(command.startsWith("generate project")){
+      generateProjectGUI(); // Calls the HTML function
+      return "Generating project ZIP...";
+    }
+
+    return "Unknown command. Try: 'create scene <name>', 'add node <name> as <type> to <scene>', 'add script <name> to <scene>'";
+  }
+};
