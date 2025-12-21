@@ -1,7 +1,7 @@
 // libs/godot.js
 // Author: CCVO
 // Purpose: Interactive GodotGameAssembler frontend logic
-// Handles NLP console, guided game creation, project tree updates
+// Handles NLP console, guided game creation, project tree and folder/file browsing
 
 (function () {
 
@@ -66,44 +66,91 @@
     }
 
     // ------------------------------
-    // Project Tree UI
+    // Tree / Browser UI
     // ------------------------------
     function buildTree() {
-        if (!PM) return;
-
-        const scenes = PM.get_scenes();
-        if (!scenes.length) {
-            projectTreeEl.innerHTML = `<em>No scenes</em>`;
-            return;
-        }
-
         projectTreeEl.innerHTML = "";
-        scenes.forEach(sceneName => {
-            const sceneNode = document.createElement("div");
-            sceneNode.className = "tree-item";
-            sceneNode.textContent = sceneName;
-            sceneNode.onclick = () => selectScene(sceneName);
-            projectTreeEl.appendChild(sceneNode);
 
-            const sceneData = PM.get_scene_file(sceneName);
-            if (sceneData && sceneData.nodes) {
-                Object.keys(sceneData.nodes).forEach(nodeName => {
-                    const nodeEl = document.createElement("div");
-                    nodeEl.className = "tree-item";
-                    nodeEl.style.paddingLeft = "15px";
-                    nodeEl.textContent = nodeName + " (" + sceneData.nodes[nodeName].type + ")";
-                    nodeEl.onclick = () => selectNode(sceneName, nodeName);
-                    projectTreeEl.appendChild(nodeEl);
-                });
-            }
+        // ---------- Folders ----------
+        const folders = Object.keys(PM.graph.folders || {});
+        folders.forEach(folderPath => {
+            const folder = PM.graph.folders[folderPath];
+            const folderEl = document.createElement("div");
+            folderEl.className = "tree-item";
+            folderEl.style.fontWeight = "bold";
+            folderEl.textContent = folder.name + " [" + folder.files.length + " files, " + folder.subfolders.length + " subfolders]";
+            folderEl.onclick = () => selectFolder(folderPath);
+            projectTreeEl.appendChild(folderEl);
+
+            // Folder's files
+            folder.files.forEach(filePath => {
+                const file = PM.graph.assets[filePath];
+                const fileEl = document.createElement("div");
+                fileEl.className = "tree-item";
+                fileEl.style.paddingLeft = "15px";
+                fileEl.textContent = file.name + " (" + file.extension + ")";
+                fileEl.onclick = () => selectFile(filePath);
+                projectTreeEl.appendChild(fileEl);
+            });
         });
+
+        // ---------- Scenes ----------
+        const scenes = PM.get_scenes();
+        if (scenes.length) {
+            const scenesHeader = document.createElement("div");
+            scenesHeader.className = "tree-item";
+            scenesHeader.style.fontWeight = "bold";
+            scenesHeader.textContent = "Scenes";
+            projectTreeEl.appendChild(scenesHeader);
+
+            scenes.forEach(sceneName => {
+                const sceneNode = document.createElement("div");
+                sceneNode.className = "tree-item";
+                sceneNode.style.paddingLeft = "10px";
+                sceneNode.textContent = sceneName;
+                sceneNode.onclick = () => selectScene(sceneName);
+                projectTreeEl.appendChild(sceneNode);
+
+                const sceneData = PM.get_scene_file(sceneName);
+                if (sceneData && sceneData.nodes) {
+                    Object.keys(sceneData.nodes).forEach(nodeName => {
+                        const nodeEl = document.createElement("div");
+                        nodeEl.className = "tree-item";
+                        nodeEl.style.paddingLeft = "25px";
+                        nodeEl.textContent = nodeName + " (" + sceneData.nodes[nodeName].type + ")";
+                        nodeEl.onclick = () => selectNode(sceneName, nodeName);
+                        projectTreeEl.appendChild(nodeEl);
+                    });
+                }
+            });
+        }
+    }
+
+    // ------------------------------
+    // Select Handlers
+    // ------------------------------
+    function selectFolder(folderPath) {
+        const folder = PM.graph.folders[folderPath];
+        fileInfoEl.innerHTML = `<strong>Folder:</strong> ${folder.name}<br>
+            <strong>Files:</strong> ${folder.files.length}<br>
+            <strong>Subfolders:</strong> ${folder.subfolders.length}`;
+        filePreviewEl.innerHTML = `<em>Preview unavailable</em>`;
+    }
+
+    function selectFile(filePath) {
+        const file = PM.graph.assets[filePath];
+        fileInfoEl.innerHTML = `<strong>File:</strong> ${file.name}<br>
+            <strong>Type:</strong> ${file.type}<br>
+            <strong>Extension:</strong> ${file.extension}<br>
+            <strong>Folder:</strong> ${file.folder || "root"}`;
+        filePreviewEl.innerHTML = `<em>Preview placeholder for ${file.name}</em>`;
     }
 
     function selectScene(sceneName) {
         const sceneData = PM.get_scene_file(sceneName);
         fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
             <strong>Nodes:</strong> ${Object.keys(sceneData.nodes).length}`;
-        filePreviewEl.innerHTML = `<em>Preview unavailable (3D / UI not implemented yet)</em>`;
+        filePreviewEl.innerHTML = `<em>Preview unavailable</em>`;
     }
 
     function selectNode(sceneName, nodeName) {
@@ -113,7 +160,7 @@
             <strong>Type:</strong> ${node.type}<br>
             <strong>Children:</strong> ${node.children.join(", ") || "none"}<br>
             <strong>Scripts:</strong> ${node.scripts.join(", ") || "none"}`;
-        filePreviewEl.innerHTML = `<em>Preview unavailable (3D / UI not implemented yet)</em>`;
+        filePreviewEl.innerHTML = `<em>Preview unavailable</em>`;
     }
 
     // ------------------------------
@@ -146,7 +193,6 @@
     // ------------------------------
     nlpLog.innerHTML = "Welcome to Godot Game Assembler!\nWhat is the name of your game?\n";
 
-    // Initial tree build
     buildTree();
 
     console.log("Godot interactive frontend loaded.");
