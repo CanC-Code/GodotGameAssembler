@@ -1,82 +1,119 @@
-// godot.js
-// Handles GUI interactions for Godot Game Assembler
+// libs/godot.js
+// Author: CCVO
+// Purpose: Connect ProjectManager + NLP + dynamic UI
 
 (function () {
 
-    const pm = window.ProjectManager;
-    if (!pm) throw new Error("ProjectManager not loaded");
+    if (!window.ProjectManager) throw new Error("ProjectManager not loaded");
 
-    const nlpLog = document.getElementById("nlp-log");
+    const projectTreeEl = document.getElementById("project-tree");
+    const fileInfoEl = document.getElementById("file-info");
+    const filePreviewEl = document.getElementById("file-preview");
     const nlpInput = document.getElementById("nlp-command");
     const nlpSend = document.getElementById("nlp-send");
+    const nlpLog = document.getElementById("nlp-log");
 
     // ------------------------------
-    // NLP Logging Helper
+    // NLP GUI
     // ------------------------------
-    function logNLP(text, prefix = "> ") {
-        nlpLog.textContent += `${prefix}${text}\n`;
-        nlpLog.scrollTop = nlpLog.scrollHeight;
-    }
-
-    // ------------------------------
-    // Send NLP Command
-    // ------------------------------
-    async function sendNLPCommand() {
+    async function sendNLPCommandGUI() {
         const cmd = nlpInput.value.trim();
         if (!cmd) return;
-
-        logNLP(cmd);
-
-        const result = await pm.process_nlp_command(cmd);
-        logNLP(result, "");
-
+        nlpLog.innerHTML += `> ${cmd}\n`;
         nlpInput.value = "";
-        nlpInput.focus();
 
-        // Optional: refresh project tree after changes
-        renderProjectTree();
+        const result = await ProjectManager.process_nlp_command(cmd);
+        nlpLog.innerHTML += `${result}\n`;
+        nlpLog.scrollTop = nlpLog.scrollHeight;
+
+        renderProjectTree(); // update tree after any command
     }
 
-    nlpSend.addEventListener("click", sendNLPCommand);
-
+    nlpSend.addEventListener("click", sendNLPCommandGUI);
     nlpInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            sendNLPCommand();
-        }
+        if (e.key === "Enter") sendNLPCommandGUI();
     });
 
     // ------------------------------
-    // Project Tree Rendering
+    // PROJECT TREE RENDERING
     // ------------------------------
-    const projectTreeEl = document.getElementById("project-tree");
+    function createTreeItem(name, type, parentEl, clickHandler) {
+        const el = document.createElement("div");
+        el.textContent = name;
+        el.classList.add("tree-item");
+        el.dataset.type = type;
+
+        el.addEventListener("click", () => {
+            document.querySelectorAll(".tree-item.selected").forEach(s => s.classList.remove("selected"));
+            el.classList.add("selected");
+            if (clickHandler) clickHandler(name, type);
+        });
+
+        parentEl.appendChild(el);
+        return el;
+    }
+
     function renderProjectTree() {
-        const scenes = pm.get_scenes();
-        if (!scenes.length) {
+        projectTreeEl.innerHTML = "";
+
+        const scenes = ProjectManager.get_scenes();
+        if (scenes.length === 0) {
             projectTreeEl.innerHTML = "<em>No scenes</em>";
+            fileInfoEl.innerHTML = "<em>No file selected</em>";
+            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
             return;
         }
 
-        projectTreeEl.innerHTML = "";
         scenes.forEach(sceneName => {
-            const sceneItem = document.createElement("div");
-            sceneItem.className = "tree-item";
-            sceneItem.textContent = sceneName;
-
-            sceneItem.addEventListener("click", () => {
-                document.querySelectorAll(".tree-item").forEach(el => el.classList.remove("selected"));
-                sceneItem.classList.add("selected");
-
-                const sceneFile = pm.get_scene_file(sceneName);
-                document.getElementById("file-info").textContent = sceneFile;
-                document.getElementById("file-preview").textContent = sceneFile;
+            const sceneEl = createTreeItem(sceneName, "scene", projectTreeEl, (name) => {
+                showSceneInfo(name);
             });
 
-            projectTreeEl.appendChild(sceneItem);
+            // List nodes
+            const sceneObj = ProjectManager.get_scene_file(sceneName);
+            if (sceneObj && sceneObj.nodes) {
+                const nodeContainer = document.createElement("div");
+                nodeContainer.style.paddingLeft = "1em";
+                sceneEl.appendChild(nodeContainer);
+
+                Object.keys(sceneObj.nodes).forEach(nodeName => {
+                    const nodeObj = sceneObj.nodes[nodeName];
+                    createTreeItem(nodeName + ` (${nodeObj.type})`, "node", nodeContainer, () => {
+                        showNodeInfo(sceneName, nodeName);
+                    });
+                });
+            }
         });
     }
 
-    // Initial render
+    // ------------------------------
+    // FILE INFO / PREVIEW
+    // ------------------------------
+    function showSceneInfo(sceneName) {
+        const scene = ProjectManager.get_scene_file(sceneName);
+        if (!scene) return;
+
+        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>Nodes: ${Object.keys(scene.nodes).length}`;
+        filePreviewEl.innerHTML = `<pre>${JSON.stringify(scene, null, 2)}</pre>`;
+    }
+
+    function showNodeInfo(sceneName, nodeName) {
+        const scene = ProjectManager.get_scene_file(sceneName);
+        if (!scene || !scene.nodes[nodeName]) return;
+
+        const node = scene.nodes[nodeName];
+        fileInfoEl.innerHTML =
+            `<strong>Node:</strong> ${nodeName}<br>` +
+            `<strong>Type:</strong> ${node.type}<br>` +
+            `<strong>Parent:</strong> ${node.parent || "(none)"}<br>` +
+            `<strong>Scripts:</strong> ${node.scripts.join(", ") || "(none)"}`;
+
+        filePreviewEl.innerHTML = `<pre>${JSON.stringify(node, null, 2)}</pre>`;
+    }
+
+    // ------------------------------
+    // INITIAL RENDER
+    // ------------------------------
     renderProjectTree();
 
 })();
