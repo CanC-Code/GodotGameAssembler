@@ -1,7 +1,6 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Interactive GodotGameAssembler frontend logic
-// Handles NLP console, guided game creation, project tree and folder/file browsing
+// Purpose: Interactive GodotGameAssembler frontend logic with ZIP import/export
 
 (function () {
 
@@ -18,6 +17,7 @@
     const PM = window.ProjectManager;
 
     if (!PM) throw new Error("ProjectManager not loaded");
+    if (typeof JSZip === "undefined") console.warn("JSZip library not loaded. ZIP import/export will not work.");
 
     // ------------------------------
     // Utility
@@ -36,33 +36,110 @@
 
         if (!PM.gameState) PM.gameState = { step: "askName" };
 
-        // Step 1: Ask for game name
         if (PM.gameState.step === "askName") {
             PM.gameName = cmd;
             PM.gameState.step = "askConcept";
-            return `Game named "${cmd}".\nDescribe the concept of your game:`;
+            return `Game named "${cmd}". Describe the concept of your game:`;
         }
 
-        // Step 2: Ask for concept
         if (PM.gameState.step === "askConcept") {
             PM.gameConcept = cmd;
             PM.gameState.step = "ready";
-            return `Concept set: "${cmd}".\nYou can now create scenes, add nodes, buttons, thumbsticks, and scripts.\nType 'help' to see commands.`;
+            return `Concept set: "${cmd}". You can now create scenes, add nodes, buttons, thumbsticks, and scripts.\nType 'help' to see commands.`;
         }
 
-        // Friendly NLP shortcuts
         if (cmd.toLowerCase().startsWith("name game ")) {
             PM.gameName = cmd.substr(10).trim();
             return `Game named "${PM.gameName}".`;
         }
+
         if (cmd.toLowerCase().startsWith("set concept ")) {
             PM.gameConcept = cmd.substr(12).trim();
             return `Concept set: "${PM.gameConcept}".`;
         }
 
-        // Delegate to ProjectManager
+        if (cmd.toLowerCase() === "export project") {
+            await exportProjectZip(PM.gameName || "GodotProject");
+            return `Project exported as ZIP.`;
+        }
+
+        if (cmd.toLowerCase().startsWith("import project")) {
+            nlpLog.innerHTML += "Use the file input below to select a ZIP.\n";
+            return "Awaiting ZIP import...";
+        }
+
         const result = await PM.process_nlp_command(cmd);
         return result;
+    }
+
+    // ------------------------------
+    // ZIP Import/Export
+    // ------------------------------
+    async function importProjectZip(file) {
+        if (!file) return;
+        if (typeof JSZip === "undefined") return alert("JSZip not loaded");
+
+        const zip = await JSZip.loadAsync(file);
+        const filePromises = [];
+
+        zip.forEach((relativePath, zipEntry) => {
+            if (zipEntry.dir) return;
+            filePromises.push(
+                zipEntry.async("uint8array").then(data => {
+                    const parts = relativePath.split("/");
+                    const fileName = parts.pop();
+                    const folderPath = parts.join("/") || null;
+                    const ext = fileName.split(".").pop();
+                    PM.graph.addAsset(relativePath, ext, ext, folderPath, data);
+
+                    if (ext === "tscn") {
+                        const textDecoder = new TextDecoder();
+                        const content = textDecoder.decode(data);
+                        const sceneName = fileName.replace(".tscn", "");
+                        PM.add_scene(sceneName);
+                        PM.add_script(sceneName, sceneName, content);
+                    }
+
+                    if (folderPath) PM.graph.addFolder(folderPath);
+                })
+            );
+        });
+
+        await Promise.all(filePromises);
+        buildTree();
+        nlpLog.innerHTML += `Project imported from ZIP.\n`;
+    }
+
+    async function exportProjectZip(projectName) {
+        if (typeof JSZip === "undefined") return alert("JSZip not loaded");
+
+        const zip = new JSZip();
+
+        // Add folders and assets
+        for (const folderPath in PM.graph.folders) {
+            zip.folder(folderPath);
+        }
+
+        for (const assetPath in PM.graph.assets) {
+            const asset = PM.graph.assets[assetPath];
+            zip.file(assetPath, asset.data || new Uint8Array());
+        }
+
+        // Add scenes
+        const scenes = PM.get_scenes();
+        scenes.forEach(sceneName => {
+            const sceneData = PM.get_scene_file(sceneName);
+            const content = JSON.stringify(sceneData, null, 2);
+            zip.file(`${sceneName}.tscn`, content);
+        });
+
+        const blob = await zip.generateAsync({ type: "blob" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${projectName}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
     }
 
     // ------------------------------
@@ -82,7 +159,6 @@
             folderEl.onclick = () => selectFolder(folderPath);
             projectTreeEl.appendChild(folderEl);
 
-            // Folder's files
             folder.files.forEach(filePath => {
                 const file = PM.graph.assets[filePath];
                 const fileEl = document.createElement("div");
@@ -195,5 +271,5 @@
 
     buildTree();
 
-    console.log("Godot interactive frontend loaded.");
+    console.log("Godot interactive frontend with ZIP import/export loaded.");
 })();
