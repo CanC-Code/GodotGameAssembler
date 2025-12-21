@@ -5,7 +5,6 @@ on:
     branches:
       - main
 
-# Required for private repos to allow pushing
 permissions:
   contents: write
 
@@ -14,46 +13,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout main branch with full history and token
-      - name: Checkout repository
+      # 1. Checkout main (private source)
+      - name: Checkout main
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # 2. Configure Git
-      - name: Set up Git
+      - name: Configure Git
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
 
-      # 3. Prepare gh-pages branch
-      - name: Prepare gh-pages branch
+      # 3. Create orphan gh-pages branch
+      - name: Create orphan gh-pages
         run: |
-          git fetch origin gh-pages || true
-          git checkout gh-pages || git checkout -b gh-pages
+          git checkout --orphan gh-pages
+          git rm -rf . || true
 
-      # 4. Clean old interface files only
-      - name: Clean old interface files
-        run: |
-          rm -rf index.html libs godot.js || true
-
-      # 5. Copy interface files from main branch
-      - name: Copy interface files from main
+      # 4. Restore ONLY public interface files from main
+      - name: Restore public interface
         run: |
           git checkout main -- index.html libs godot.js
 
-      # 6. Commit changes if any
-      - name: Commit changes
+      # 5. Commit public interface
+      - name: Commit public interface
         run: |
           git add index.html libs godot.js
-          if ! git diff --cached --quiet; then
-            git commit -m "Deploy GodotGameAssembler interface - $(date +'%Y-%m-%d %H:%M:%S')"
-          else
-            echo "No changes to commit"
-          fi
+          git commit -m "Deploy public interface"
 
-      # 7. Push to gh-pages using GITHUB_TOKEN
-      - name: Push to gh-pages
+      # 6. Force-push orphan branch
+      - name: Push gh-pages
         run: |
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} gh-pages
