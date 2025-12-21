@@ -1,5 +1,5 @@
 // godot.js
-// Application bootstrap + UI glue
+// UI bootstrap + project reflection
 
 (function () {
 
@@ -7,18 +7,41 @@
         throw new Error("ProjectManager not loaded");
     }
 
-    if (!window.NLP_PRO) {
-        console.warn("NLP_PRO not loaded");
+    const treeEl = document.getElementById("project-tree");
+
+    function renderProjectTree() {
+        const scenes = window.ProjectManager.get_scenes();
+        treeEl.innerHTML = "";
+
+        if (!scenes.length) {
+            treeEl.innerHTML = "<em>No scenes</em>";
+            return;
+        }
+
+        scenes.forEach(scene => {
+            const div = document.createElement("div");
+            div.className = "tree-item";
+            div.textContent = scene;
+            div.onclick = () => selectScene(scene, div);
+            treeEl.appendChild(div);
+        });
+    }
+
+    function selectScene(scene, el) {
+        document.querySelectorAll(".tree-item")
+            .forEach(n => n.classList.remove("selected"));
+        el.classList.add("selected");
+
+        document.getElementById("file-info").textContent =
+            `Scene: ${scene}`;
+
+        document.getElementById("file-preview").textContent =
+            window.ProjectManager.get_scene_file(scene);
     }
 
     window.sendNLPCommandGUI = async function () {
         const input = document.getElementById("nlp-command");
         const log = document.getElementById("nlp-log");
-
-        if (!input || !log) {
-            console.error("NLP UI elements missing");
-            return;
-        }
 
         const command = input.value.trim();
         if (!command) return;
@@ -26,21 +49,20 @@
         log.textContent += `> ${command}\n`;
         input.value = "";
 
-        try {
-            const result =
-                await window.ProjectManager.process_nlp_command(command);
+        const result =
+            await window.ProjectManager.process_nlp_command(command);
 
-            if (result) {
-                log.textContent += `${result}\n`;
-            }
-        } catch (err) {
-            log.textContent += `Error: ${err.message}\n`;
-            console.error(err);
-        }
+        if (result) log.textContent += `${result}\n`;
 
+        renderProjectTree();
         log.scrollTop = log.scrollHeight;
     };
 
-    console.log("Godot Game Assembler initialized");
+    document.getElementById("nlp-send")
+        .addEventListener("click", window.sendNLPCommandGUI);
+
+    renderProjectTree();
+
+    console.log("GUI initialized");
 
 })();
