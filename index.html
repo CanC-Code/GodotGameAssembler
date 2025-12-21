@@ -58,5 +58,32 @@
 <script src="libs/project_manager.js"></script>
 <script src="godot.js"></script>
 
+<script>
+  // Connect NLP input to ProjectManager
+  const nlpInput = document.getElementById("nlp-command");
+  const nlpSend = document.getElementById("nlp-send");
+  const nlpLog = document.getElementById("nlp-log");
+
+  async function sendNLPCommandGUI() {
+    const cmd = nlpInput.value.trim();
+    if (!cmd) return;
+    nlpLog.innerHTML += `> ${cmd}\n`;
+    nlpInput.value = "";
+
+    if (window.ProjectManager) {
+      const result = await ProjectManager.process_nlp_command(cmd);
+      nlpLog.innerHTML += `${result}\n`;
+      nlpLog.scrollTop = nlpLog.scrollHeight;
+    } else {
+      nlpLog.innerHTML += "ProjectManager not loaded.\n";
+    }
+  }
+
+  nlpSend.addEventListener("click", sendNLPCommandGUI);
+  nlpInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendNLPCommandGUI();
+  });
+</script>
+
 </body>
 </html>
