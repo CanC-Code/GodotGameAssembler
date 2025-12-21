@@ -1,192 +1,247 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Godot Game Assembler frontend logic (NLP chat + import/export)
-// Requires: ProjectManager, JSZip
+// Purpose: Interactive Godot Game Assembler interface
+// Fully guided workflow with NLP, scene scaffolding, asset management, and game creation
 
 (function () {
 
-    const pm = window.ProjectManager;
-    if (!pm) throw new Error("ProjectManager not loaded.");
+    // ------------------------------
+    // Dependency Guard
+    // ------------------------------
+    if (!window.ProjectGraph) throw new Error("ProjectGraph not loaded");
+    if (!window.AssetHandler) throw new Error("AssetHandler not loaded");
+    if (!window.SceneComposer) throw new Error("SceneComposer not loaded");
+    if (!window.ZipExporter) throw new Error("ZipExporter not loaded");
 
-    const projectTree = document.getElementById("project-tree");
-    const fileInfo = document.getElementById("file-info");
-    const filePreview = document.getElementById("file-preview");
+    // ------------------------------
+    // Core Instances
+    // ------------------------------
+    const graph = new ProjectGraph();
+    const assets = new AssetHandler();
+    const composer = new SceneComposer(graph);
+    const exporter = new ZipExporter(graph, composer, assets);
 
-    const nlpInput = document.getElementById("nlp-command");
-    const nlpSend = document.getElementById("nlp-send");
-    const nlpLog = document.getElementById("nlp-log");
+    // ------------------------------
+    // NLP (optional but expected)
+    // ------------------------------
+    const nlp = window.NLP_PRO || null;
 
+    // ------------------------------
+    // Project State
+    // ------------------------------
     let gameName = null;
     let gameConcept = null;
 
     // ------------------------------
-    // NLP Chat Assistant
+    // Utility Functions
     // ------------------------------
-    async function sendNLPCommandGUI() {
-        const cmd = nlpInput.value.trim();
-        if (!cmd) return;
-        nlpLog.innerHTML += `> ${cmd}\n`;
-        nlpInput.value = "";
+    function logMessage(msg) {
+        const log = document.getElementById("nlp-log");
+        log.innerHTML += `${msg}\n`;
+        log.scrollTop = log.scrollHeight;
+    }
 
-        let response = "";
+    function sanitizeName(name) {
+        return name.trim().replace(/[^a-zA-Z0-9_]/g, "_");
+    }
 
-        // Interactive guidance
-        if (!gameName) {
-            if (cmd.toLowerCase().startsWith("name game ")) {
-                gameName = cmd.substring(10).trim();
-                response = `Game named '${gameName}'. Now you can set its concept: set concept "<text>"`;
-            } else {
-                response = "Welcome! Please start by naming your game: name game \"<Name>\"";
+    // ------------------------------
+    // ProjectManager API
+    // ------------------------------
+    const ProjectManager = {
+
+        // ---------- Game Metadata ----------
+        nameGame(name) {
+            if (!name) return "Invalid name.";
+            gameName = sanitizeName(name);
+            return `Game named '${gameName}'. You can now set its concept using: set concept "<Text>"`;
+        },
+
+        setConcept(text) {
+            if (!gameName) return "Please name your game first.";
+            gameConcept = text;
+            return `Concept set: "${gameConcept}". You can now create your first scene using: create scene <Name>`;
+        },
+
+        // ---------- Scene Management ----------
+        createScene(name) {
+            if (!gameName) return "Please name your game first.";
+            if (!name) return "Invalid scene name.";
+            name = sanitizeName(name);
+
+            if (!graph.addScene(name)) return `Scene '${name}' already exists.`;
+
+            logMessage(`Scene '${name}' created.`);
+
+            // Auto scaffold nodes based on scene type
+            if (name.toLowerCase() === "intro") {
+                graph.addNode(name, "Cutscene", "Node2D");
+                graph.addNode(name, "StartButton", "Button");
+                graph.attachScript(name, "StartButton", "IntroButtonScript");
+            } else if (name.toLowerCase() === "menu") {
+                graph.addNode(name, "Background", "Sprite");
+                graph.addNode(name, "StartButton", "Button");
+                graph.addNode(name, "OptionsButton", "Button");
+                graph.addNode(name, "ExitButton", "Button");
+                graph.attachScript(name, "StartButton", "MenuStartScript");
+                graph.attachScript(name, "OptionsButton", "MenuOptionsScript");
+                graph.attachScript(name, "ExitButton", "MenuExitScript");
+            } else if (name.toLowerCase() === "gameplay") {
+                graph.addNode(name, "Player", "KinematicBody2D");
+                graph.addNode(name, "Camera", "Camera2D");
+                graph.addNode(name, "HUD", "CanvasLayer");
+                graph.addNode(name, "Thumbstick", "TouchScreenButton");
+                graph.attachScript(name, "Player", "PlayerMovementScript");
             }
-        } else if (!gameConcept) {
-            if (cmd.toLowerCase().startsWith("set concept ")) {
-                gameConcept = cmd.substring(12).trim();
-                response = `Concept set: "${gameConcept}". You can now create your first scene using: create scene <Name>`;
-            } else {
-                response = `Your game is named '${gameName}'. Set its concept first: set concept "<text>"`;
+
+            return `Scene '${name}' created and scaffolded with default nodes.`;
+        },
+
+        addNode(scene, node, type = "Node2D", parent = null) {
+            if (!scene) return "No scene specified.";
+            const success = graph.addNode(scene, node, type, parent);
+            return success ? `Node '${node}' added to '${scene}'.` : `Failed to add node '${node}'.`;
+        },
+
+        attachScript(scene, node, script) {
+            const success = graph.attachScript(scene, node, script);
+            return success ? `Script '${script}' attached to '${node}'.` : "Failed to attach script.";
+        },
+
+        addButton(scene, name, position = null) {
+            const result = graph.addNode(scene, name, "Button");
+            graph.attachScript(scene, name, "ButtonScript");
+            return result ? `Button '${name}' added to '${scene}'.` : `Failed to add button '${name}'.`;
+        },
+
+        linkButton(button, sceneFrom, sceneTo) {
+            // For simplicity, attach a script to the button linking to the target scene
+            if (!graph.getNode(sceneFrom, button)) return `Button '${button}' not found in '${sceneFrom}'.`;
+            graph.attachScript(sceneFrom, button, `LinkToScene_${sceneTo}`);
+            return `Button '${button}' in '${sceneFrom}' now links to scene '${sceneTo}'.`;
+        },
+
+        addThumbstick(scene, name = "Thumbstick") {
+            const result = graph.addNode(scene, name, "TouchScreenButton");
+            return result ? `Thumbstick '${name}' added to '${scene}'.` : `Failed to add thumbstick '${name}'.`;
+        },
+
+        getScenes() {
+            return graph.getScenes();
+        },
+
+        getSceneFile(sceneName) {
+            return graph.getSceneFile(sceneName);
+        },
+
+        uploadAsset(path, type, extension, folder = null, data = null) {
+            const success = graph.addAsset(path, type, extension, folder, data);
+            return success ? `Asset '${path}' added.` : `Failed to add asset '${path}'.`;
+        },
+
+        listAssets() {
+            return Object.values(graph.assets);
+        },
+
+        generateProject(name = "GodotProject") {
+            return exporter.exportProject(name).then(() => true);
+        },
+
+        // ---------- NLP / Interactive ----------
+        async process_nlp_command(command) {
+            command = command.trim();
+            if (!command) return "";
+
+            // Pre-process commands
+            const lower = command.toLowerCase();
+
+            // Game naming
+            if (lower.startsWith("name game ")) {
+                const game = command.substring(10).trim();
+                return this.nameGame(game);
             }
-        } else {
-            // Process standard commands
-            try {
-                response = await pm.process_nlp_command(cmd);
-                refreshProjectTree();
-            } catch (err) {
-                response = `Error: ${err.message}`;
+
+            if (lower.startsWith("set concept ")) {
+                const concept = command.substring(12).trim().replace(/^"(.*)"$/, "$1");
+                return this.setConcept(concept);
             }
-        }
 
-        nlpLog.innerHTML += `${response}\n`;
-        nlpLog.scrollTop = nlpLog.scrollHeight;
-    }
-
-    nlpSend.addEventListener("click", sendNLPCommandGUI);
-    nlpInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") sendNLPCommandGUI();
-    });
-
-    // ------------------------------
-    // Project Tree Refresh
-    // ------------------------------
-    function refreshProjectTree() {
-        const scenes = pm.get_scenes();
-        if (!scenes.length) {
-            projectTree.innerHTML = "<em>No scenes</em>";
-            return;
-        }
-
-        projectTree.innerHTML = "";
-        scenes.forEach(sceneName => {
-            const div = document.createElement("div");
-            div.className = "tree-item";
-            div.textContent = sceneName;
-            div.addEventListener("click", () => selectScene(sceneName));
-            projectTree.appendChild(div);
-        });
-    }
-
-    function selectScene(sceneName) {
-        const scene = pm.get_scene_file(sceneName);
-        if (!scene) return;
-
-        fileInfo.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
-                              <strong>Nodes:</strong> ${Object.keys(scene.nodes).length}`;
-
-        const previewLines = [];
-        Object.entries(scene.nodes).forEach(([nodeName, node]) => {
-            previewLines.push(`${nodeName} (${node.type})`);
-        });
-        filePreview.textContent = previewLines.join("\n");
-    }
-
-    // ------------------------------
-    // Import / Export Buttons
-    // ------------------------------
-    function createImportExportButtons() {
-        const topRightPanel = document.getElementById("top-right");
-        const container = document.createElement("div");
-        container.style.margin = "0.5em 0";
-        container.style.display = "flex";
-        container.style.gap = "0.5em";
-
-        const importBtn = document.createElement("button");
-        importBtn.textContent = "Import ZIP";
-        const fileInput = document.createElement("input");
-        fileInput.type = "file";
-        fileInput.accept = ".zip";
-        fileInput.style.display = "none";
-
-        importBtn.addEventListener("click", () => fileInput.click());
-        fileInput.addEventListener("change", async (e) => {
-            if (!e.target.files.length) return;
-            const file = e.target.files[0];
-            const zip = await JSZip.loadAsync(file);
-            await importGodotProject(zip);
-            nlpLog.innerHTML += `Project '${file.name}' imported.\n`;
-            refreshProjectTree();
-        });
-
-        const exportBtn = document.createElement("button");
-        exportBtn.textContent = "Export ZIP";
-        exportBtn.addEventListener("click", async () => {
-            const zip = await exportGodotProject();
-            zip.generateAsync({ type: "blob" }).then((blob) => {
-                const a = document.createElement("a");
-                a.href = URL.createObjectURL(blob);
-                a.download = "GodotProject.zip";
-                a.click();
-            });
-        });
-
-        container.appendChild(importBtn);
-        container.appendChild(exportBtn);
-        container.appendChild(fileInput);
-        topRightPanel.insertBefore(container, topRightPanel.firstChild);
-    }
-
-    // ------------------------------
-    // Import / Export Helpers
-    // ------------------------------
-    async function importGodotProject(zip) {
-        for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-            if (zipEntry.dir) {
-                pm.graph.addFolder(relativePath);
-            } else {
-                const data = await zipEntry.async("uint8array");
-                const ext = relativePath.split(".").pop();
-                const folder = relativePath.includes("/") ? relativePath.split("/").slice(0, -1).join("/") : null;
-                pm.graph.addAsset(relativePath, "file", ext, folder, data);
+            if (lower.startsWith("create scene ")) {
+                const scene = command.substring(13).trim();
+                return this.createScene(scene);
             }
+
+            if (lower.startsWith("add node ")) {
+                const parts = command.substring(9).split(" to ");
+                if (parts.length !== 2) return "Invalid syntax: add node <Name> to <Scene>";
+                const [nodePart, scenePart] = parts;
+                const nodeInfo = nodePart.split(" ");
+                const nodeName = nodeInfo[0];
+                const nodeType = nodeInfo[1] || "Node2D";
+                return this.addNode(scenePart.trim(), nodeName, nodeType);
+            }
+
+            if (lower.startsWith("attach script ")) {
+                const m = command.match(/attach script (.+) to (.+) in (.+)/i);
+                if (!m) return "Invalid syntax: attach script <Script> to <Node> in <Scene>";
+                const [, script, node, scene] = m;
+                return this.attachScript(scene, node, script);
+            }
+
+            if (lower.startsWith("add button ")) {
+                const m = command.match(/add button (.+) to (.+)/i);
+                if (!m) return "Invalid syntax: add button <Name> to <Scene>";
+                const [, btn, scene] = m;
+                return this.addButton(scene, btn);
+            }
+
+            if (lower.startsWith("link button ")) {
+                const m = command.match(/link button (.+) to scene (.+)/i);
+                if (!m) return "Invalid syntax: link button <Name> to scene <Scene>";
+                const [, btn, sceneTo] = m;
+                const sceneFrom = this.getScenes().find(s => graph.getNode(s, btn));
+                if (!sceneFrom) return `Button '${btn}' not found in any scene.`;
+                return this.linkButton(btn, sceneFrom, sceneTo);
+            }
+
+            if (lower.startsWith("add thumbstick ")) {
+                const scene = command.substring(14).trim();
+                return this.addThumbstick(scene);
+            }
+
+            if (lower === "list scenes") return `Scenes: ${this.getScenes().join(", ") || "None"}`;
+
+            if (lower.startsWith("export project ")) {
+                const projName = command.substring(15).trim();
+                await this.generateProject(projName);
+                return `Project '${projName}' exported successfully.`;
+            }
+
+            // NLP engine fallback
+            if (nlp) {
+                try {
+                    const result = await nlp.process(command, this);
+                    return result || "NLP processed.";
+                } catch (err) {
+                    console.error(err);
+                    return `NLP error: ${err.message}`;
+                }
+            }
+
+            // Interactive guidance
+            if (!gameName) return "Hello! What would you like to do? Start by naming your game: name game \"<Name>\"";
+            if (!gameConcept) return `You can now set the concept of your game: set concept "<Text>"`;
+            if (this.getScenes().length === 0) return `You can now create your first scene using: create scene <Name>`;
+
+            return "Unrecognized command. Type 'help'.";
         }
-    }
-
-    async function exportGodotProject() {
-        const zip = new JSZip();
-
-        for (const folderPath in pm.graph.folders) {
-            zip.folder(folderPath);
-        }
-
-        for (const assetPath in pm.graph.assets) {
-            const asset = pm.graph.assets[assetPath];
-            if (asset.data) zip.file(assetPath, asset.data);
-        }
-
-        const scenes = pm.get_scenes();
-        for (const sceneName of scenes) {
-            const sceneData = pm.get_scene_file(sceneName);
-            zip.file(`${sceneName}.tscn`, JSON.stringify(sceneData, null, 2));
-        }
-
-        return zip;
-    }
+    };
 
     // ------------------------------
-    // Initialize
+    // Global Export
     // ------------------------------
-    createImportExportButtons();
-    refreshProjectTree();
-    nlpLog.innerHTML = "Hello! What would you like to do?\nStart by naming your game: name game \"<Name>\"\n";
+    window.ProjectManager = ProjectManager;
 
-    console.log("Godot frontend (chat-driven) loaded.");
+    console.log("ProjectManager (Interactive) initialized.");
 
 })();
