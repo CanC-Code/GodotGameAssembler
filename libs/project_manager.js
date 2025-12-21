@@ -1,6 +1,6 @@
 // libs/project_manager.js
 // Author: CCVO
-// Purpose: Connect Godot Game Assembler UI to ProjectManager with dynamic info panel and chat-driven workflow
+// Purpose: Connect Godot Game Assembler UI to ProjectManager with dynamic info panel, import/export support
 
 (function () {
 
@@ -18,11 +18,14 @@
     const nlpSend = document.getElementById("nlp-send");
     const nlpLog = document.getElementById("nlp-log");
 
-    // Track selected scene / folder / asset / node
+    // Optional import/export buttons
+    const importInput = document.getElementById("import-zip");
+    const exportBtn = document.getElementById("export-btn");
+
+    // Track selected scene / folder / asset
     let selectedScene = null;
     let selectedFolder = null;
     let selectedAsset = null;
-    let selectedNode = null;
 
     // ------------------------------
     // Project Tree Rendering
@@ -31,32 +34,18 @@
         projectTreeEl.innerHTML = "";
 
         const scenes = pm.getScenes();
-        if (scenes.length === 0) {
-            projectTreeEl.innerHTML = "<em>No scenes</em>";
+        if (scenes.length === 0 && !Object.keys(pm.graph?.folders || {}).length) {
+            projectTreeEl.innerHTML = "<em>No scenes or folders</em>";
         }
 
-        scenes.forEach(sceneName => {
+        scenes.forEach(scene => {
             const sceneItem = document.createElement("div");
             sceneItem.classList.add("tree-item");
-            sceneItem.textContent = sceneName;
-            sceneItem.addEventListener("click", () => selectScene(sceneName));
+            sceneItem.textContent = scene;
+            sceneItem.addEventListener("click", () => selectScene(scene));
             projectTreeEl.appendChild(sceneItem);
-
-            // Render nodes under this scene
-            const sceneData = pm.getSceneFile(sceneName);
-            if (sceneData) {
-                Object.keys(sceneData.nodes).forEach(nodeName => {
-                    const nodeItem = document.createElement("div");
-                    nodeItem.classList.add("tree-item");
-                    nodeItem.style.paddingLeft = "20px";
-                    nodeItem.textContent = nodeName + ` (${sceneData.nodes[nodeName].type})`;
-                    nodeItem.addEventListener("click", () => selectNode(sceneName, nodeName));
-                    projectTreeEl.appendChild(nodeItem);
-                });
-            }
         });
 
-        // Folders
         const folders = Object.keys(pm.graph?.folders || {});
         folders.forEach(folderPath => {
             const folder = pm.graph.folders[folderPath];
@@ -66,32 +55,7 @@
             folderItem.style.fontStyle = "italic";
             folderItem.addEventListener("click", () => selectFolder(folderPath));
             projectTreeEl.appendChild(folderItem);
-
-            // Render files in folder
-            folder.files.forEach(filePath => {
-                const fileAsset = pm.graph.getAsset(filePath);
-                const fileItem = document.createElement("div");
-                fileItem.classList.add("tree-item");
-                fileItem.style.paddingLeft = "20px";
-                fileItem.textContent = fileAsset.name;
-                fileItem.addEventListener("click", () => selectAsset(filePath));
-                projectTreeEl.appendChild(fileItem);
-            });
-
-            // Render subfolders
-            folder.subfolders.forEach(subPath => {
-                const subfolder = pm.graph.folders[subPath];
-                const subItem = document.createElement("div");
-                subItem.classList.add("tree-item");
-                subItem.style.paddingLeft = "20px";
-                subItem.textContent = subfolder.name + "/";
-                subItem.style.fontStyle = "italic";
-                subItem.addEventListener("click", () => selectFolder(subPath));
-                projectTreeEl.appendChild(subItem);
-            });
         });
-
-        highlightSelected();
     }
 
     // ------------------------------
@@ -99,27 +63,17 @@
     // ------------------------------
     function highlightSelected() {
         Array.from(projectTreeEl.children).forEach(el => el.classList.remove("selected"));
-
         Array.from(projectTreeEl.children).forEach(el => {
-            if (selectedScene && el.textContent === selectedScene) el.classList.add("selected");
-            if (selectedNode && el.textContent.startsWith(selectedNode + " (")) el.classList.add("selected");
-            if (selectedFolder && el.textContent.startsWith(pm.graph?.folders[selectedFolder]?.name + "/")) el.classList.add("selected");
-            if (selectedAsset && el.textContent === pm.graph.getAsset(selectedAsset)?.name) el.classList.add("selected");
+            if (el.textContent === selectedScene ||
+                (selectedFolder && el.textContent.startsWith(pm.graph?.folders[selectedFolder]?.name + "/")) ||
+                el.textContent === pm.graph?.assets[selectedAsset]?.name) {
+                el.classList.add("selected");
+            }
         });
     }
 
     function selectScene(sceneName) {
         selectedScene = sceneName;
-        selectedNode = null;
-        selectedFolder = null;
-        selectedAsset = null;
-        highlightSelected();
-        updateInfoPanel();
-    }
-
-    function selectNode(sceneName, nodeName) {
-        selectedScene = sceneName;
-        selectedNode = nodeName;
         selectedFolder = null;
         selectedAsset = null;
         highlightSelected();
@@ -129,7 +83,6 @@
     function selectFolder(folderPath) {
         selectedFolder = folderPath;
         selectedScene = null;
-        selectedNode = null;
         selectedAsset = null;
         highlightSelected();
         updateInfoPanel();
@@ -138,7 +91,6 @@
     function selectAsset(assetPath) {
         selectedAsset = assetPath;
         selectedScene = null;
-        selectedNode = null;
         selectedFolder = null;
         highlightSelected();
         updateInfoPanel();
@@ -156,20 +108,8 @@
             if (!scene) return;
             fileInfoEl.innerHTML = `<strong>Scene:</strong> ${selectedScene}<br>
                 <strong>Nodes:</strong> ${Object.keys(scene.nodes).length}`;
-            filePreviewEl.innerHTML = "<em>Scene preview placeholder</em>";
+            filePreviewEl.innerHTML = "<em>Scene preview not implemented yet.</em>";
         }
-
-        else if (selectedNode) {
-            const node = pm.getNode(selectedScene, selectedNode);
-            if (!node) return;
-            fileInfoEl.innerHTML = `<strong>Node:</strong> ${selectedNode}<br>
-                <strong>Type:</strong> ${node.type}<br>
-                <strong>Parent:</strong> ${node.parent || "none"}<br>
-                <strong>Children:</strong> ${node.children.length}<br>
-                <strong>Scripts:</strong> ${node.scripts.join(", ") || "none"}`;
-            filePreviewEl.innerHTML = "<em>Node preview placeholder</em>";
-        }
-
         else if (selectedFolder) {
             const contents = pm.graph.getFolderContents(selectedFolder);
             const fileCount = contents.files.length;
@@ -177,9 +117,8 @@
             fileInfoEl.innerHTML = `<strong>Folder:</strong> ${selectedFolder}<br>
                 <strong>Files:</strong> ${fileCount}<br>
                 <strong>Subfolders:</strong> ${folderCount}`;
-            filePreviewEl.innerHTML = "<em>Folder preview placeholder</em>";
+            filePreviewEl.innerHTML = "<em>Folder preview not implemented yet.</em>";
         }
-
         else if (selectedAsset) {
             const asset = pm.graph.getAsset(selectedAsset);
             if (!asset) return;
@@ -187,14 +126,12 @@
                 <strong>Type:</strong> ${asset.type}<br>
                 <strong>Extension:</strong> ${asset.extension}<br>
                 <strong>Folder:</strong> ${asset.folder || "root"}`;
-
             if (["jpg", "png", "jpeg", "gif"].includes(asset.extension.toLowerCase())) {
                 filePreviewEl.innerHTML = `<img src="${asset.data}" style="max-width:100%; max-height:100%;" />`;
             } else {
-                filePreviewEl.innerHTML = "<em>Preview not available</em>";
+                filePreviewEl.innerHTML = "<em>Preview not available for this type.</em>";
             }
         }
-
         else {
             fileInfoEl.innerHTML = "<em>No selection</em>";
             filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
@@ -202,46 +139,102 @@
     }
 
     // ------------------------------
-    // NLP Chat / Command Handling
+    // Import / Export
+    // ------------------------------
+    async function importProject(file) {
+        if (!file) return;
+        const zip = await JSZip.loadAsync(file);
+        pm.graph = new ProjectGraph(); // reset graph
+
+        for (const path in zip.files) {
+            const entry = zip.files[path];
+            if (entry.dir) {
+                pm.graph.addFolder(path);
+            } else {
+                const ext = path.split('.').pop().toLowerCase();
+                const data = await entry.async("base64");
+                pm.graph.addAsset(path, "file", ext, path.includes('/') ? path.split("/").slice(0,-1).join("/") : null,
+                    `data:application/octet-stream;base64,${data}`);
+            }
+        }
+
+        renderProjectTree();
+        updateInfoPanel();
+        return `Project imported: ${file.name}`;
+    }
+
+    async function exportProject() {
+        const name = prompt("Enter project name for export:", pm.projectName || "GodotProject");
+        if (!name) return;
+
+        const exporter = new ZipExporter(pm.graph, pm.sceneComposer, pm.assetHandler);
+        exporter.setExportFinishedCallback(filename => {
+            console.log(`Export finished: ${filename}`);
+        });
+        await exporter.exportProject(name);
+    }
+
+    if (importInput) {
+        importInput.addEventListener("change", async e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const result = await importProject(file);
+            nlpLog.innerHTML += `${result}\n`;
+        });
+    }
+
+    if (exportBtn) {
+        exportBtn.addEventListener("click", exportProject);
+    }
+
+    // ------------------------------
+    // NLP Command Handling
     // ------------------------------
     async function sendNLPCommandGUI() {
         const cmd = nlpInput.value.trim();
         if (!cmd) return;
-        nlpLog.innerHTML += `> ${cmd}\n`;
         nlpInput.value = "";
+        nlpLog.innerHTML += `> ${cmd}\n`;
 
-        if (pm) {
-            const result = await pm.process_nlp_command(cmd);
-            nlpLog.innerHTML += `${result}\n`;
-            nlpLog.scrollTop = nlpLog.scrollHeight;
-
-            // Refresh tree and info
-            renderProjectTree();
-            updateInfoPanel();
-        } else {
+        if (!pm) {
             nlpLog.innerHTML += "ProjectManager not loaded.\n";
+            return;
         }
+
+        // Handle import/export commands
+        if (cmd.match(/^export\s+project\s+"?([^"]+)"?/i)) {
+            const name = cmd.match(/^export\s+project\s+"?([^"]+)"?/i)[1];
+            const exporter = new ZipExporter(pm.graph, pm.sceneComposer, pm.assetHandler);
+            exporter.setExportFinishedCallback(filename => {
+                nlpLog.innerHTML += `Export finished: ${filename}\n`;
+            });
+            await exporter.exportProject(name);
+            return;
+        }
+
+        if (cmd.match(/^import\s+project/i)) {
+            nlpLog.innerHTML += `Use the file input to select a ZIP to import.\n`;
+            return;
+        }
+
+        const result = await pm.process_nlp_command(cmd);
+        nlpLog.innerHTML += `${result}\n`;
+        nlpLog.scrollTop = nlpLog.scrollHeight;
+
+        // Refresh tree and info
+        renderProjectTree();
+        updateInfoPanel();
     }
 
     nlpSend.addEventListener("click", sendNLPCommandGUI);
-    nlpInput.addEventListener("keydown", (e) => {
+    nlpInput.addEventListener("keydown", e => {
         if (e.key === "Enter") sendNLPCommandGUI();
     });
-
-    // ------------------------------
-    // Guided Chat Initialization
-    // ------------------------------
-    function startChatWorkflow() {
-        nlpLog.innerHTML += `Hello! What would you like to do?\n`;
-        nlpLog.innerHTML += `Start by naming your game: name game "<Name>"\n`;
-        nlpLog.scrollTop = nlpLog.scrollHeight;
-    }
 
     // ------------------------------
     // Initial Rendering
     // ------------------------------
     renderProjectTree();
     updateInfoPanel();
-    startChatWorkflow();
 
 })();
