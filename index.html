@@ -108,7 +108,8 @@
       const reader = new FileReader();
       reader.onload = (e) => {
         const arrayBuffer = e.target.result;
-        ProjectManager.upload_asset(file.name, type, arrayBuffer);
+        const uint8 = new Uint8Array(arrayBuffer);
+        ProjectManager.upload_asset(file.name, type, uint8);
         list.innerHTML += `<li>${file.name} (${type})</li>`;
         appendNLP(`Asset '${file.name}' uploaded as ${type}.`);
       };
@@ -125,7 +126,7 @@
     const zip = new JSZip();
 
     // --- Add Scenes & Scripts ---
-    const scenes = ProjectManager.get_scenes(); // Implement in GDScript singleton
+    const scenes = ProjectManager.get_scenes();
     for (const sceneName in scenes) {
       const scene = scenes[sceneName];
       const tscnContent = ProjectManager.get_scene_file(sceneName);
@@ -137,10 +138,11 @@
     }
 
     // --- Add Assets ---
-    const assets = ProjectManager.list_assets(); // {filename: {type, data}}
+    const assets = ProjectManager.list_assets();
     for (const assetName in assets) {
       const asset = assets[assetName];
-      zip.file(`${projectName}/assets/${assetName}`, asset.data);
+      const buffer = new Uint8Array(asset.data);
+      zip.file(`${projectName}/assets/${assetName}`, buffer);
     }
 
     // --- Add Made-by Slide ---
@@ -170,9 +172,8 @@
   }
 
   // Initialize Godot Runtime (assumes instance is available)
-  let godotInstance = null; // Replace with your Godot HTML5 export instance
+  let godotInstance = null; 
   if(window.godotInstance) initGodotRuntime(window.godotInstance);
-
 </script>
 </body>
 </html>
