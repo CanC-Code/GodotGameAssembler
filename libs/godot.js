@@ -1,6 +1,6 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Godot Game Assembler frontend logic (NLP + import/export)
+// Purpose: Godot Game Assembler frontend logic (NLP chat + import/export)
 // Requires: ProjectManager, JSZip
 
 (function () {
@@ -16,8 +16,11 @@
     const nlpSend = document.getElementById("nlp-send");
     const nlpLog = document.getElementById("nlp-log");
 
+    let gameName = null;
+    let gameConcept = null;
+
     // ------------------------------
-    // NLP Command Handler
+    // NLP Chat Assistant
     // ------------------------------
     async function sendNLPCommandGUI() {
         const cmd = nlpInput.value.trim();
@@ -25,14 +28,35 @@
         nlpLog.innerHTML += `> ${cmd}\n`;
         nlpInput.value = "";
 
-        try {
-            const result = await pm.process_nlp_command(cmd);
-            nlpLog.innerHTML += `${result}\n`;
-            nlpLog.scrollTop = nlpLog.scrollHeight;
-            refreshProjectTree();
-        } catch (err) {
-            nlpLog.innerHTML += `Error: ${err.message}\n`;
+        let response = "";
+
+        // Interactive guidance
+        if (!gameName) {
+            if (cmd.toLowerCase().startsWith("name game ")) {
+                gameName = cmd.substring(10).trim();
+                response = `Game named '${gameName}'. Now you can set its concept: set concept "<text>"`;
+            } else {
+                response = "Welcome! Please start by naming your game: name game \"<Name>\"";
+            }
+        } else if (!gameConcept) {
+            if (cmd.toLowerCase().startsWith("set concept ")) {
+                gameConcept = cmd.substring(12).trim();
+                response = `Concept set: "${gameConcept}". You can now create your first scene using: create scene <Name>`;
+            } else {
+                response = `Your game is named '${gameName}'. Set its concept first: set concept "<text>"`;
+            }
+        } else {
+            // Process standard commands
+            try {
+                response = await pm.process_nlp_command(cmd);
+                refreshProjectTree();
+            } catch (err) {
+                response = `Error: ${err.message}`;
+            }
         }
+
+        nlpLog.innerHTML += `${response}\n`;
+        nlpLog.scrollTop = nlpLog.scrollHeight;
     }
 
     nlpSend.addEventListener("click", sendNLPCommandGUI);
@@ -64,11 +88,9 @@
         const scene = pm.get_scene_file(sceneName);
         if (!scene) return;
 
-        // Display info
         fileInfo.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>
                               <strong>Nodes:</strong> ${Object.keys(scene.nodes).length}`;
 
-        // Display node list as preview
         const previewLines = [];
         Object.entries(scene.nodes).forEach(([nodeName, node]) => {
             previewLines.push(`${nodeName} (${node.type})`);
@@ -122,7 +144,7 @@
     }
 
     // ------------------------------
-    // Import Godot Project ZIP
+    // Import / Export Helpers
     // ------------------------------
     async function importGodotProject(zip) {
         for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
@@ -137,24 +159,18 @@
         }
     }
 
-    // ------------------------------
-    // Export Godot Project ZIP
-    // ------------------------------
     async function exportGodotProject() {
         const zip = new JSZip();
 
-        // Export folders
         for (const folderPath in pm.graph.folders) {
             zip.folder(folderPath);
         }
 
-        // Export assets
         for (const assetPath in pm.graph.assets) {
             const asset = pm.graph.assets[assetPath];
             if (asset.data) zip.file(assetPath, asset.data);
         }
 
-        // Export scenes as .tscn files
         const scenes = pm.get_scenes();
         for (const sceneName of scenes) {
             const sceneData = pm.get_scene_file(sceneName);
@@ -169,7 +185,8 @@
     // ------------------------------
     createImportExportButtons();
     refreshProjectTree();
+    nlpLog.innerHTML = "Hello! What would you like to do?\nStart by naming your game: name game \"<Name>\"\n";
 
-    console.log("Godot frontend loaded.");
+    console.log("Godot frontend (chat-driven) loaded.");
 
 })();
