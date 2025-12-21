@@ -1,12 +1,12 @@
 // export/zip_exporter.js
 // Author: CCVO
 // Purpose: Package GodotGameAssembler projects into a downloadable ZIP
-// Fully aligned with ProjectManager & SceneComposer
+// Fully aligned with ProjectManager.js style
 
 class ZipExporter {
     constructor(projectGraph, sceneComposer, assetHandler) {
         if (!projectGraph || !sceneComposer || !assetHandler) {
-            throw new Error("Dependencies required: ProjectGraph, SceneComposer, AssetHandler");
+            throw new Error("Dependencies not set: ProjectGraph, SceneComposer, AssetHandler required");
         }
         this.projectGraph = projectGraph;
         this.sceneComposer = sceneComposer;
@@ -29,23 +29,19 @@ class ZipExporter {
             const zip = new JSZip();
 
             // --- Step 1: Scenes & Scripts ---
+            this.sceneComposer.projectGraph = this.projectGraph;
             const scenesZip = this.sceneComposer.composeAllScenes(projectName);
+
             for (const filePath in scenesZip.files) {
-                const content = await scenesZip.file(filePath).async("uint8array").catch(() => null);
-                if (content) zip.file(filePath, content);
+                const fileData = await scenesZip.files[filePath].async("uint8array");
+                zip.file(filePath, fileData);
             }
 
             // --- Step 2: Assets ---
             const assets = this.assetHandler.listAssets();
             for (const name in assets) {
                 const asset = assets[name];
-                if (!asset.data) continue;
-
-                // Convert string assets to Uint8Array if necessary
-                const uint8 = asset.data instanceof Uint8Array
-                    ? asset.data
-                    : new TextEncoder().encode(asset.data.toString());
-
+                const uint8 = new Uint8Array(asset.data);
                 zip.file(`${projectName}/assets/${name}`, uint8);
             }
 
@@ -59,14 +55,7 @@ class ZipExporter {
                 }
             });
 
-            // Trigger download
-            const a = document.createElement("a");
-            a.href = URL.createObjectURL(blob);
-            a.download = `${projectName}.zip`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
+            saveAs(blob, `${projectName}.zip`);
 
             if (typeof this.onExportFinished === "function") this.onExportFinished(`${projectName}.zip`);
         } catch (err) {
