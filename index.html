@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Godot Game Assembler</title>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header>Godot Game Assembler</header>
+
+<div id="app-root">
+
+  <!-- TOP HALF -->
+  <div id="top-area">
+
+    <!-- TOP LEFT: PROJECT / FILES -->
+    <div id="top-left" class="panel">
+      <div class="panel-title">Project / Files</div>
+      <div id="project-tree">
+        <em>No scenes</em>
+      </div>
+    </div>
+
+    <!-- TOP RIGHT: FILE INFO / PREVIEW -->
+    <div id="top-right" class="panel">
+      <div class="panel-title">File Information</div>
+      <div id="file-info">
+        <em>No file selected</em>
+      </div>
+      <div id="file-preview">
+        <em>Preview will appear here</em>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BOTTOM HALF: NLP -->
+  <div id="bottom-area" class="panel">
+    <div class="nlp-input-row">
+      <input id="nlp-command" placeholder="Type a command..." />
+      <button id="nlp-send">Send</button>
+    </div>
+    <div id="nlp-log"></div>
+  </div>
+
+</div>
+
+<!-- CORE -->
+<script src="core/project_graph.js"></script>
+<script src="asset_manager/asset_handler.js"></script>
+<script src="libs/scene_composer.js"></script>
+<script src="export/zip_exporter.js"></script>
+
+<!-- LOGIC -->
+<script src="libs/nlp_pro.js"></script>
+<script src="libs/project_manager.js"></script>
+<script src="godot.js"></script>
+
+<script>
+  // Connect NLP input to ProjectManager
+  const nlpInput = document.getElementById("nlp-command");
+  const nlpSend = document.getElementById("nlp-send");
+  const nlpLog = document.getElementById("nlp-log");
+
+  async function sendNLPCommandGUI() {
+    const cmd = nlpInput.value.trim();
+    if (!cmd) return;
+    nlpLog.innerHTML += `> ${cmd}\n`;
+    nlpInput.value = "";
+
+    if (window.ProjectManager) {
+      const result = await ProjectManager.process_nlp_command(cmd);
+      nlpLog.innerHTML += `${result}\n`;
+      nlpLog.scrollTop = nlpLog.scrollHeight;
+    } else {
+      nlpLog.innerHTML += "ProjectManager not loaded.\n";
+    }
+  }
+
+  nlpSend.addEventListener("click", sendNLPCommandGUI);
+  nlpInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendNLPCommandGUI();
+  });
+</script>
+
+</body>
+</html>
