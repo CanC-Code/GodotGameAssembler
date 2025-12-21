@@ -1,12 +1,13 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Dynamic UI binding for GodotGameAssembler
+// Purpose: Dynamic UI binding for GodotGameAssembler with NLP auto-refresh
 
 (function () {
 
     const projectTreeEl = document.getElementById("project-tree");
     const fileInfoEl = document.getElementById("file-info");
     const filePreviewEl = document.getElementById("file-preview");
+    const nlpLogEl = document.getElementById("nlp-log");
 
     if (!window.ProjectManager) {
         console.error("ProjectManager not loaded.");
@@ -157,13 +158,48 @@
     ["add_scene", "add_node", "add_script", "attach_script", "upload_asset"].forEach(fn => wrapWithRefresh(fn));
 
     // ----------------------------
+    // NLP auto-refresh
+    // ----------------------------
+    const nlpInput = document.getElementById("nlp-command");
+    const nlpSend = document.getElementById("nlp-send");
+    const nlpLog = document.getElementById("nlp-log");
+
+    async function sendNLPCommand() {
+        const cmd = nlpInput.value.trim();
+        if (!cmd) return;
+        nlpLog.innerHTML += `> ${cmd}\n`;
+        nlpInput.value = "";
+
+        if (pm) {
+            const result = await pm.process_nlp_command(cmd);
+            nlpLog.innerHTML += `${result}\n`;
+            nlpLog.scrollTop = nlpLog.scrollHeight;
+
+            // Attempt to auto-select newly created scene/node/asset
+            const matchScene = cmd.match(/^create\s+scene\s+(\w+)/i);
+            if (matchScene) {
+                const sceneName = matchScene[1];
+                renderProjectTree();
+                const newItem = projectTreeEl.querySelector(`.tree-item[data-type="scene"][data-name="${sceneName}"]`);
+                if (newItem) {
+                    newItem.click();
+                }
+            }
+        } else {
+            nlpLog.innerHTML += "ProjectManager not loaded.\n";
+        }
+    }
+
+    nlpSend.addEventListener("click", sendNLPCommand);
+    nlpInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendNLPCommand();
+    });
+
+    // ----------------------------
     // Initial render
     // ----------------------------
     renderProjectTree();
 
-    // ----------------------------
-    // Expose globally
-    // ----------------------------
     window.refreshProjectTree = renderProjectTree;
 
 })();
