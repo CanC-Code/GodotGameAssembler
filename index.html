@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GodotGameAssembler</title>
+<style>
+  body { font-family: sans-serif; margin:0; padding:0; background:#1e1e1e; color:#f0f0f0; }
+  header { background:#282c34; padding:1em; text-align:center; font-size:1.5em; }
+  #container { display:flex; flex-wrap:wrap; padding:1em; gap:1em; }
+  .panel { background:#2b2b2b; padding:1em; border-radius:8px; flex:1; min-width:300px; max-width:600px; }
+  button { margin-top:0.5em; padding:0.5em 1em; font-size:1em; border:none; border-radius:4px; cursor:pointer; }
+  input, select, textarea { width:100%; margin-top:0.5em; padding:0.5em; border-radius:4px; border:none; }
+  #npl-interface { height:150px; overflow-y:auto; background:#1b1b1b; padding:0.5em; border-radius:4px; }
+</style>
+</head>
+<body>
+<header>GodotGameAssembler</header>
+
+<div id="container">
+  <!-- Scene & Node Manager -->
+  <div class="panel" id="scene-manager">
+    <h3>Scenes & Nodes</h3>
+    <input type="text" id="scene-name" placeholder="Scene name">
+    <button onclick="addScene()">Add Scene</button>
+    <div id="scene-list"></div>
+    <hr>
+    <input type="text" id="node-name" placeholder="Node name">
+    <select id="node-type">
+      <option>Node2D</option>
+      <option>Sprite</option>
+      <option>Label</option>
+      <option>Control</option>
+      <option>Area2D</option>
+      <option>Camera2D</option>
+    </select>
+    <input type="text" id="parent-name" placeholder="Parent node (optional)">
+    <button onclick="addNode()">Add Node</button>
+    <div id="node-list"></div>
+  </div>
+
+  <!-- Asset Manager -->
+  <div class="panel" id="asset-manager">
+    <h3>Assets</h3>
+    <input type="file" id="asset-upload" multiple>
+    <select id="asset-type">
+      <option value="texture">Texture</option>
+      <option value="gltf">GLTF Model</option>
+      <option value="audio">Audio</option>
+      <option value="font">Font</option>
+    </select>
+    <button onclick="uploadAssets()">Upload Asset(s)</button>
+    <ul id="asset-list"></ul>
+  </div>
+
+  <!-- Project Export -->
+  <div class="panel" id="export-panel">
+    <h3>Export Project</h3>
+    <input type="text" id="project-name" placeholder="Project Name">
+    <button onclick="generateProject()">Generate & Download ZIP</button>
+    <div id="export-status"></div>
+  </div>
+
+  <!-- NLP Interface -->
+  <div class="panel" id="nlp-panel">
+    <h3>NLP Interface</h3>
+    <div id="npl-interface"></div>
+    <input type="text" id="nlp-command" placeholder="Type command here">
+    <button onclick="sendNLPCommand()">Send</button>
+  </div>
+</div>
+
+<script>
+  // Placeholder in-memory project structures
+  const ProjectGraph = { scenes: {}, assets: {} };
+  
+  // --- Scene & Node Functions ---
+  function addScene() {
+    const name = document.getElementById("scene-name").value.trim();
+    if(!name) return alert("Enter scene name");
+    if(ProjectGraph.scenes[name]) return alert("Scene already exists");
+    ProjectGraph.scenes[name] = { nodes:{}, scripts:{} };
+    document.getElementById("scene-list").innerHTML += `<div>${name}</div>`;
+    appendNLP(`Scene '${name}' added.`);
+  }
+
+  function addNode() {
+    const sceneList = Object.keys(ProjectGraph.scenes);
+    if(sceneList.length === 0) return alert("Add a scene first");
+    const nodeName = document.getElementById("node-name").value.trim();
+    const nodeType = document.getElementById("node-type").value;
+    const parent = document.getElementById("parent-name").value.trim();
+    const sceneName = sceneList[sceneList.length-1]; // Add to last scene for simplicity
+    if(!nodeName) return alert("Enter node name");
+    ProjectGraph.scenes[sceneName].nodes[nodeName] = { type: nodeType, parent: parent, scripts: [], properties:{} };
+    document.getElementById("node-list").innerHTML += `<div>${nodeName} (${nodeType})</div>`;
+    appendNLP(`Node '${nodeName}' of type '${nodeType}' added to scene '${sceneName}'.`);
+  }
+
+  // --- Asset Functions ---
+  function uploadAssets() {
+    const files = document.getElementById("asset-upload").files;
+    const type = document.getElementById("asset-type").value;
+    if(files.length === 0) return alert("Select files to upload");
+    const list = document.getElementById("asset-list");
+    for(let file of files){
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        ProjectGraph.assets[file.name] = { type:type, data:e.target.result };
+        list.innerHTML += `<li>${file.name} (${type})</li>`;
+        appendNLP(`Asset '${file.name}' uploaded as ${type}.`);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+  }
+
+  // --- Export Function ---
+  function generateProject() {
+    const projectName = document.getElementById("project-name").value.trim() || "GodotProject";
+    const status = document.getElementById("export-status");
+    status.innerText = "Generating project ZIP...";
+    appendNLP(`Generating project '${projectName}'...`);
+
+    // HTML5 ZIP generation using JSZip (placeholder)
+    // Replace this with JSZip integration in real usage
+    setTimeout(() => {
+      status.innerText = `Project '${projectName}' ZIP ready for download (placeholder).`;
+      appendNLP(`Project '${projectName}' generation complete.`);
+    }, 1000);
+  }
+
+  // --- NLP Interface ---
+  function sendNLPCommand() {
+    const cmd = document.getElementById("nlp-command").value.trim();
+    if(!cmd) return;
+    appendNLP(`> ${cmd}`);
+    document.getElementById("nlp-command").value = "";
+    
+    // Placeholder NLP behavior: simple command recognition
+    if(cmd.toLowerCase().includes("snake")){
+      addScene();
+      appendNLP("Template for 'Snake' game suggested. Nodes and scripts can be added manually or via NLP engine.");
+    } else if(cmd.toLowerCase().includes("thumbstick")){
+      const sceneName = Object.keys(ProjectGraph.scenes)[0];
+      if(sceneName){
+        ProjectGraph.scenes[sceneName].nodes["VirtualJoystick"] = { type:"Control", parent:"", scripts:[], properties:{position:"Vector2(50,50)"} };
+        appendNLP("Thumbstick added to the scene.");
+      }
+    } else {
+      appendNLP("Command recognized but no automated action available (placeholder).");
+    }
+  }
+
+  function appendNLP(message) {
+    const panel = document.getElementById("npl-interface");
+    panel.innerHTML += `<div>${message}</div>`;
+    panel.scrollTop = panel.scrollHeight;
+  }
+</script>
+</body>
+</html>
