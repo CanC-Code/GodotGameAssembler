@@ -1,6 +1,6 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Connect ProjectManager + NLP + dynamic UI with assets and folders
+// Purpose: Connect ProjectManager + NLP + dynamic UI with assets, folders, and placeholder viewport
 
 (function () {
 
@@ -58,12 +58,12 @@
         projectTreeEl.innerHTML = "";
 
         const scenes = ProjectManager.get_scenes();
-        const graph = ProjectManager.graph || ProjectManager; // safe fallback
+        const graph = ProjectManager.graph || ProjectManager;
 
         if (scenes.length === 0) {
             projectTreeEl.innerHTML = "<em>No scenes</em>";
             fileInfoEl.innerHTML = "<em>No file selected</em>";
-            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
+            filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
             return;
         }
 
@@ -120,12 +120,12 @@
         const scene = ProjectManager.get_scene_file(sceneName);
         if (!scene) {
             fileInfoEl.innerHTML = "<em>No data</em>";
-            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
+            filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
             return;
         }
 
         fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>Nodes: ${Object.keys(scene.nodes || {}).length}`;
-        filePreviewEl.innerHTML = `<pre>${JSON.stringify(scene, null, 2)}</pre>`;
+        filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
     }
 
     function showNodeInfo(sceneName, nodeName) {
@@ -138,14 +138,14 @@
             `<strong>Parent:</strong> ${node.parent || "(none)"}<br>` +
             `<strong>Scripts:</strong> ${node.scripts.join(", ") || "(none)"}`;
 
-        filePreviewEl.innerHTML = `<pre>${JSON.stringify(node, null, 2)}</pre>`;
+        filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
     }
 
     function showFolderInfo(folderPath) {
         const folder = ProjectManager.graph.getFolderContents(folderPath);
         if (!folder) {
             fileInfoEl.innerHTML = "<em>No folder data</em>";
-            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
+            filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
             return;
         }
 
@@ -154,7 +154,7 @@
             `<strong>Files:</strong> ${folder.files.length}<br>` +
             `<strong>Subfolders:</strong> ${folder.subfolders.length}`;
 
-        filePreviewEl.innerHTML = `<pre>${JSON.stringify(folder, null, 2)}</pre>`;
+        filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
     }
 
     function showFileInfo(filePath) {
@@ -170,7 +170,7 @@
         if (asset.extension.match(/\.(jpg|png|jpeg)$/i) && asset.data) {
             filePreviewEl.innerHTML = `<img src="${asset.data}" style="max-width:100%; max-height:100%;">`;
         } else {
-            filePreviewEl.innerHTML = `<pre>${JSON.stringify(asset, null, 2)}</pre>`;
+            filePreviewEl.innerHTML = `<div style="width:100%; height:100%; display:flex; justify-content:center; align-items:center; color:#888;">Viewport Placeholder</div>`;
         }
     }
 
