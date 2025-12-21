@@ -1,72 +1,81 @@
-# project_manager.gd
-extends Node
+// project_manager.gd
+// GodotGameAssembler Project Manager
 
-var scenes = {} # {scene_name: {nodes: [], scripts: {script_name: code}}}
-var assets = {} # {filename: {type: "texture/gltf/audio", data: PoolByteArray}}
+const ProjectManager = (function(){
 
-# Scene Management
-func add_scene(scene_name: String) -> void:
-	if scenes.has(scene_name):
-		return
-	scenes[scene_name] = {"nodes": [], "scripts": {}}
+  const scenes = {};   // sceneName => { nodes: [], scripts: {} }
+  const assets = {};   // assetName => { type, data }
 
-func add_node(scene_name: String, node_name: String, node_type: String, parent_name: String="") -> void:
-	if not scenes.has(scene_name):
-		return
-	scenes[scene_name]["nodes"].append({
-		"name": node_name,
-		"type": node_type,
-		"parent": parent_name
-	})
+  // --- Scene Management ---
+  function add_scene(name){
+    if(!name || scenes[name]) return;
+    scenes[name] = { nodes: [], scripts: {} };
+  }
 
-func add_script(scene_name: String, script_name: String, code: String) -> void:
-	if not scenes.has(scene_name):
-		return
-	scenes[scene_name]["scripts"][script_name] = code
+  function add_node(sceneName,nodeName,nodeType,parent=""){
+    if(!scenes[sceneName]) add_scene(sceneName);
+    scenes[sceneName].nodes.push({ name: nodeName, type: nodeType, parent: parent, scripts: [] });
+  }
 
-# Asset Management
-func upload_asset(filename: String, asset_type: String, data: Variant) -> void:
-	var byte_array = PoolByteArray(data)
-	assets[filename] = {"type": asset_type, "data": byte_array}
+  function add_script(sceneName,scriptName,code){
+    if(!scenes[sceneName]) return;
+    scenes[sceneName].scripts[scriptName] = code;
 
-func list_assets() -> Dictionary:
-	return assets
+    // Attach script to node if exists
+    const node = scenes[sceneName].nodes.find(n=>n.name === scriptName.split(".")[0]);
+    if(node) node.scripts.push(scriptName);
+  }
 
-# NLP Commands
-func process_nlp_command(command: String) -> String:
-	var cmd = command.strip_edges().to_lower()
-	if cmd.begins_with("add scene "):
-		var scene_name = command.substr(10)
-		add_scene(scene_name)
-		return "Scene '%s' added via NLP." % scene_name
-	elif cmd.begins_with("add node "):
-		return "Node added via NLP (parsing not implemented)."
-	else:
-		return "Command not recognized."
+  function get_scenes(){ return JSON.parse(JSON.stringify(scenes)); }
 
-# Project Export
-func get_scenes() -> Dictionary:
-	return scenes.duplicate(true)
+  function get_scene_file(sceneName){
+    if(!scenes[sceneName]) return "";
+    let content = `[gd_scene load_steps=2 format=2]\n`;
+    scenes[sceneName].nodes.forEach(node=>{
+      content += `[node name="${node.name}" type="${node.type}" parent="${node.parent}"]\n`;
+      if(node.scripts.length > 0){
+        node.scripts.forEach(s=>content += `script = "res://scripts/${s}"\n`);
+      }
+    });
+    return content;
+  }
 
-func get_scene_file(scene_name: String) -> String:
-	if not scenes.has(scene_name):
-		return ""
-	var tscn_text = "[gd_scene load_steps=2 format=2]\n\n"
-	var scene = scenes[scene_name]
-	for node in scene["nodes"]:
-		tscn_text += '[node name="%s" type="%s" parent="%s"]\n' % [node["name"], node["type"], node["parent"]]
-	tscn_text += "\n"
-	for script_name in scene["scripts"]:
-		tscn_text += '[script name="%s"]\n%s\n\n' % [script_name, scene["scripts"][script_name]]
-	return tscn_text
+  // --- Asset Management ---
+  function upload_asset(name,type,data){
+    assets[name] = { type, data };
+  }
 
-func inject_made_by(scene_name: String="MadeByIntro") -> void:
-	if not scenes.has(scene_name):
-		add_scene(scene_name)
-	add_node(scene_name, "MadeByLabel", "Label")
-	var code = 'text = "Made with GodotGameAssembler by CCVO"'
-	add_script(scene_name, "MadeByIntro.gd", code)
+  function list_assets(){ return JSON.parse(JSON.stringify(assets)); }
 
-func reset_project() -> void:
-	scenes.clear()
-	assets.clear()
+  // --- NLP Command Interface ---
+  function process_nlp_command(cmd){
+    if(typeof NLP !== "undefined"){
+      const plan = NLP.interpret(cmd);
+      plan.scenes.forEach(scene => add_scene(scene));
+      for(let sceneName in plan.nodes){
+        plan.nodes[sceneName].forEach(node=>{
+          add_node(sceneName,node.name,node.type,"");
+          if(node.scripts){
+            node.scripts.forEach(script=>{
+              add_script(sceneName,script.name,script.code);
+            });
+          }
+        });
+      }
+      return `Project plan applied: ${plan.scenes.length} scene(s) added.`;
+    } else {
+      return "NLP module not loaded.";
+    }
+  }
+
+  return {
+    add_scene,
+    add_node,
+    add_script,
+    get_scenes,
+    get_scene_file,
+    upload_asset,
+    list_assets,
+    process_nlp_command
+  };
+})();
