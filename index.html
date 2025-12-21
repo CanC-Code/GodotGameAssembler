@@ -76,13 +76,14 @@
 <script src="libs/project_manager.js"></script>
 
 <script>
-  // --- GUI functions connecting to ProjectManager ---
+  // --- GUI Helpers ---
   function appendNLP(message) {
     const panel = document.getElementById("nlp-interface");
     panel.innerHTML += `<div>${message}</div>`;
     panel.scrollTop = panel.scrollHeight;
   }
 
+  // --- Scene & Node GUI ---
   function addSceneGUI() {
     const name = document.getElementById("scene-name").value.trim();
     if(!name) return alert("Enter scene name");
@@ -103,6 +104,7 @@
     appendNLP(`Node '${nodeName}' of type '${nodeType}' added to scene '${sceneName}'.`);
   }
 
+  // --- Asset GUI ---
   function uploadAssetsGUI() {
     const files = document.getElementById("asset-upload").files;
     const type = document.getElementById("asset-type").value;
@@ -122,6 +124,7 @@
     }
   }
 
+  // --- Project Export GUI ---
   async function generateProjectGUI() {
     const projectName = document.getElementById("project-name").value.trim() || "GodotProject";
     const status = document.getElementById("export-status");
@@ -134,6 +137,7 @@
     appendNLP(`Project '${projectName}' generated and ready for download.`);
   }
 
+  // --- NLP GUI ---
   function sendNLPCommandGUI() {
     const cmd = document.getElementById("nlp-command").value.trim();
     if(!cmd) return;
