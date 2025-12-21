@@ -358,7 +358,6 @@ remote func sync_state(pos,rot,anim_s):
             questions.push({id:"npcCount",question:"How many NPCs to place?"});
         }
 
-        // Loot and quest triggers
         if(/loot|item/.test(text)){
             plan.push({action:"add_loot"});
             questions.push({id:"lootEnemy",question:"Which enemy should drop loot?"});
@@ -401,7 +400,20 @@ const ProjectManager={
     async generate_project(name){return await this.zip.generateZip(name);},
     process_nlp_command(cmd){return this.nlp.process(cmd);},
     get_scenes(){return this.graph.scenes;},
-    get_scene_file(name){return this.composer.composeScene(name);}
+    get_scene_file(name){return this.composer.composeScene(name);},
+
+    // ------------------------------
+    // NLP wrapper for auto Promise handling
+    // ------------------------------
+    process_nlp(command){
+        appendNLP(`> ${command}`);
+        this.process_nlp_command(command).then(response=>{
+            appendNLP(response);
+        }).catch(err=>{
+            appendNLP(`Error: ${err}`);
+            console.error(err);
+        });
+    }
 };
 
 ProjectManager.init();
