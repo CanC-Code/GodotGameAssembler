@@ -1,7 +1,7 @@
 // project_manager.js
 // Author: CCVO
 // Purpose: GodotGameAssembler Ultimate Android-ready 2D/3D ProjectManager
-// Features: 2D/3D, UI, touch input, animations, physics, networking, multiplayer, NLP interactive game building
+// Features: 2D/3D, UI, touch input, animations, physics, networking, multiplayer, NLP interactive game building, procedural generation
 
 // ------------------------------
 // Core ProjectGraph
@@ -125,7 +125,7 @@ class ZipExporter {
 }
 
 // ------------------------------
-// NLP Engine with 2D/3D & Multiplayer
+// NLP Engine with 2D/3D, Multiplayer & Procedural Generation
 // ------------------------------
 class NLP {
     constructor(graph) {
@@ -178,6 +178,8 @@ class NLP {
                 case "add_asset":
                     this.graph.addAsset(step.name, step.type || "Texture", step.data || "placeholder");
                     response += `Asset '${step.name}' added.\n`; break;
+                case "procedural_generate":
+                    response += `Procedural generation started for scene '${step.scene}'.\n`; break;
                 default:
                     response += `Unknown action: ${step.action}\n`;
             }
@@ -209,6 +211,17 @@ class NLP {
             case "multiplayerType":
                 this._setupMultiplayer(scene, answer);
                 break;
+            case "worldType":
+                this._generateTerrain(scene, answer);
+                break;
+            case "enemyCount":
+                const count = parseInt(answer,10) || 5;
+                for(let i=0;i<count;i++) this._spawnEnemy(scene,i);
+                break;
+            case "npcCount":
+                const npcCount = parseInt(answer,10) || 2;
+                for(let i=0;i<npcCount;i++) this._spawnNPC(scene,i);
+                break;
         }
     }
 
@@ -238,6 +251,51 @@ func rpc_move(id, pos, rot, anim_state):
         const scriptName = "Multiplayer.gd";
         this.graph.addScript(scriptName, scriptCode);
         this.graph.attachScript(sceneName, mpNode, scriptName);
+    }
+
+    _generateTerrain(scene, type) {
+        switch(type.toLowerCase()) {
+            case "forest":
+                for(let i=0;i<20;i++){
+                    const tree = `Tree${i}`;
+                    this.graph.addNode(scene, tree, "StaticBody", "World");
+                    this.graph.addScript(`${tree}_script.gd`, `extends StaticBody\n# Tree collision`);
+                    this.graph.attachScript(scene, tree, `${tree}_script.gd`);
+                } break;
+            case "dungeon":
+                for(let i=0;i<50;i++){
+                    const tile = `DungeonTile${i}`;
+                    this.graph.addNode(scene, tile, "StaticBody", "World");
+                } break;
+            case "open field":
+                for(let i=0;i<10;i++){
+                    const rock = `Rock${i}`;
+                    this.graph.addNode(scene, rock, "StaticBody", "World");
+                } break;
+        }
+    }
+
+    _spawnEnemy(scene, index){
+        const enemy = `Enemy${index}`;
+        this.graph.addNode(scene, enemy, "KinematicBody", "World");
+        this.graph.addScript(`${enemy}.gd`, `
+extends KinematicBody
+var speed = 4
+func _physics_process(delta):
+    move_and_slide(Vector3(randf()-0.5,0,randf()-0.5)*speed)
+`);
+        this.graph.attachScript(scene, enemy, `${enemy}.gd`);
+    }
+
+    _spawnNPC(scene, index){
+        const npc = `NPC${index}`;
+        this.graph.addNode(scene, npc, "KinematicBody", "World");
+        this.graph.addScript(`${npc}.gd`, `
+extends KinematicBody
+func _ready():
+    print("NPC ${index} ready")
+`);
+        this.graph.attachScript(scene, npc, `${npc}.gd`);
     }
 
     async _generatePlan(text) {
@@ -279,9 +337,14 @@ remote func sync_state(pos, rot, anim_s):
             });
             plan.push({ action: "add_node", scene: "3DMultiplayerScene", name: "Camera", type: "Camera", parent: "Player" });
             plan.push({ action: "add_node", scene: "3DMultiplayerScene", name: "UI", type: "CanvasLayer" });
+            plan.push({ action: "procedural_generate", scene: "3DMultiplayerScene" });
+
             questions.push({ id: "actionButtons", question: "How many action buttons?" });
             questions.push({ id: "animationType", question: "Animation types for Player? (Idle,Run,Jump)" });
             questions.push({ id: "multiplayerType", question: "Enable multiplayer? (ENet/WebSocket)" });
+            questions.push({ id: "worldType", question: "World type? (Forest, Dungeon, Open Field, Endless Runner)" });
+            questions.push({ id: "enemyCount", question: "How many enemies to spawn?" });
+            questions.push({ id: "npcCount", question: "How many NPCs to place?" });
         }
 
         return { plan, questions };
