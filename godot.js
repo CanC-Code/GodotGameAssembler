@@ -1,6 +1,6 @@
 // libs/godot.js
 // Author: CCVO
-// Purpose: Connect ProjectManager + NLP + dynamic UI
+// Purpose: Connect ProjectManager + NLP + dynamic UI with assets and folders
 
 (function () {
 
@@ -26,7 +26,7 @@
         nlpLog.innerHTML += `${result}\n`;
         nlpLog.scrollTop = nlpLog.scrollHeight;
 
-        renderProjectTree(); // update tree after any command
+        renderProjectTree();
     }
 
     nlpSend.addEventListener("click", sendNLPCommandGUI);
@@ -35,7 +35,7 @@
     });
 
     // ------------------------------
-    // PROJECT TREE RENDERING
+    // PROJECT TREE
     // ------------------------------
     function createTreeItem(name, type, parentEl, clickHandler) {
         const el = document.createElement("div");
@@ -43,7 +43,8 @@
         el.classList.add("tree-item");
         el.dataset.type = type;
 
-        el.addEventListener("click", () => {
+        el.addEventListener("click", (e) => {
+            e.stopPropagation();
             document.querySelectorAll(".tree-item.selected").forEach(s => s.classList.remove("selected"));
             el.classList.add("selected");
             if (clickHandler) clickHandler(name, type);
@@ -57,6 +58,8 @@
         projectTreeEl.innerHTML = "";
 
         const scenes = ProjectManager.get_scenes();
+        const graph = ProjectManager.graph || ProjectManager; // safe fallback
+
         if (scenes.length === 0) {
             projectTreeEl.innerHTML = "<em>No scenes</em>";
             fileInfoEl.innerHTML = "<em>No file selected</em>";
@@ -64,44 +67,71 @@
             return;
         }
 
+        // Scenes
         scenes.forEach(sceneName => {
             const sceneEl = createTreeItem(sceneName, "scene", projectTreeEl, (name) => {
                 showSceneInfo(name);
             });
 
-            // List nodes
-            const sceneObj = ProjectManager.get_scene_file(sceneName);
-            if (sceneObj && sceneObj.nodes) {
+            const sceneObj = ProjectManager.get_scene_file(sceneName) || {};
+            const nodes = sceneObj.nodes || {};
+
+            // Nodes
+            if (Object.keys(nodes).length > 0) {
                 const nodeContainer = document.createElement("div");
                 nodeContainer.style.paddingLeft = "1em";
                 sceneEl.appendChild(nodeContainer);
 
-                Object.keys(sceneObj.nodes).forEach(nodeName => {
-                    const nodeObj = sceneObj.nodes[nodeName];
-                    createTreeItem(nodeName + ` (${nodeObj.type})`, "node", nodeContainer, () => {
+                Object.keys(nodes).forEach(nodeName => {
+                    const node = nodes[nodeName];
+                    createTreeItem(nodeName + ` (${node.type})`, "node", nodeContainer, () => {
                         showNodeInfo(sceneName, nodeName);
                     });
                 });
             }
         });
+
+        // Folders
+        const folders = Object.keys(ProjectManager.graph?.folders || {});
+        folders.forEach(folderPath => {
+            const folder = ProjectManager.graph.folders[folderPath];
+            const folderEl = createTreeItem(folder.name + ` (Folder, ${folder.files.length} files)`, "folder", projectTreeEl, () => {
+                showFolderInfo(folderPath);
+            });
+
+            const folderContainer = document.createElement("div");
+            folderContainer.style.paddingLeft = "1em";
+            folderEl.appendChild(folderContainer);
+
+            // Files
+            folder.files.forEach(filePath => {
+                const asset = ProjectManager.graph.assets[filePath];
+                createTreeItem(asset.name + ` (${asset.extension})`, "file", folderContainer, () => {
+                    showFileInfo(filePath);
+                });
+            });
+        });
     }
 
     // ------------------------------
-    // FILE INFO / PREVIEW
+    // INFO / PREVIEW
     // ------------------------------
     function showSceneInfo(sceneName) {
         const scene = ProjectManager.get_scene_file(sceneName);
-        if (!scene) return;
+        if (!scene) {
+            fileInfoEl.innerHTML = "<em>No data</em>";
+            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
+            return;
+        }
 
-        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>Nodes: ${Object.keys(scene.nodes).length}`;
+        fileInfoEl.innerHTML = `<strong>Scene:</strong> ${sceneName}<br>Nodes: ${Object.keys(scene.nodes || {}).length}`;
         filePreviewEl.innerHTML = `<pre>${JSON.stringify(scene, null, 2)}</pre>`;
     }
 
     function showNodeInfo(sceneName, nodeName) {
-        const scene = ProjectManager.get_scene_file(sceneName);
-        if (!scene || !scene.nodes[nodeName]) return;
+        const node = ProjectManager.getNode(sceneName, nodeName);
+        if (!node) return showSceneInfo(sceneName);
 
-        const node = scene.nodes[nodeName];
         fileInfoEl.innerHTML =
             `<strong>Node:</strong> ${nodeName}<br>` +
             `<strong>Type:</strong> ${node.type}<br>` +
@@ -109,6 +139,39 @@
             `<strong>Scripts:</strong> ${node.scripts.join(", ") || "(none)"}`;
 
         filePreviewEl.innerHTML = `<pre>${JSON.stringify(node, null, 2)}</pre>`;
+    }
+
+    function showFolderInfo(folderPath) {
+        const folder = ProjectManager.graph.getFolderContents(folderPath);
+        if (!folder) {
+            fileInfoEl.innerHTML = "<em>No folder data</em>";
+            filePreviewEl.innerHTML = "<em>Preview will appear here</em>";
+            return;
+        }
+
+        fileInfoEl.innerHTML =
+            `<strong>Folder:</strong> ${folderPath}<br>` +
+            `<strong>Files:</strong> ${folder.files.length}<br>` +
+            `<strong>Subfolders:</strong> ${folder.subfolders.length}`;
+
+        filePreviewEl.innerHTML = `<pre>${JSON.stringify(folder, null, 2)}</pre>`;
+    }
+
+    function showFileInfo(filePath) {
+        const asset = ProjectManager.graph.getAsset(filePath);
+        if (!asset) return;
+
+        fileInfoEl.innerHTML =
+            `<strong>File:</strong> ${asset.name}<br>` +
+            `<strong>Type:</strong> ${asset.type}<br>` +
+            `<strong>Extension:</strong> ${asset.extension}<br>` +
+            `<strong>Folder:</strong> ${asset.folder || "(none)"}`;
+
+        if (asset.extension.match(/\.(jpg|png|jpeg)$/i) && asset.data) {
+            filePreviewEl.innerHTML = `<img src="${asset.data}" style="max-width:100%; max-height:100%;">`;
+        } else {
+            filePreviewEl.innerHTML = `<pre>${JSON.stringify(asset, null, 2)}</pre>`;
+        }
     }
 
     // ------------------------------
