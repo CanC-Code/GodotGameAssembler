@@ -1,7 +1,7 @@
 // project_manager.js
 // Author: CCVO
-// Purpose: GodotGameAssembler Android-ready Next-Gen Dynamic NLP Project Manager
-// Features: 2D/3D, UI, physics, touch input, animation, audio, networking, mobile optimization
+// Purpose: GodotGameAssembler Ultimate Android-ready Next-Gen Project Manager
+// Features: 2D/3D, UI, physics, touch input, animation, audio, networking, dynamic NLP
 
 // ------------------------------
 // Core ProjectGraph
@@ -116,12 +116,16 @@ class ZipExporter {
             zip.file(`${projectName}/assets/${path}`, this.graph.assets[path].data);
         }
 
+        // Android Export placeholders
+        zip.file(`${projectName}/export_presets.cfg`, `[preset]\nname="Android"\ntarget="Android"`);
+        zip.file(`${projectName}/AndroidManifest.xml`, `<manifest package="org.godotgame.${projectName}"></manifest>`);
+
         return await zip.generateAsync({ type: "blob" });
     }
 }
 
 // ------------------------------
-// Dynamic NLP Engine with full Godot & Android understanding
+// NLP Engine with full Godot & Android knowledge
 // ------------------------------
 class NLP {
     constructor(graph) {
@@ -138,20 +142,20 @@ class NLP {
         const text = input.trim();
         this.history.push(text);
 
-        // Answer pending question first
+        // Handle pending questions first
         if (this.context.pendingQuestions.length > 0) {
             const q = this.context.pendingQuestions.shift();
             this.context.answers[q.id] = text;
             await this._applyAnswer(q.id, text);
-            if (this.context.pendingQuestions.length > 0) return this.context.pendingQuestions[0].question;
+            if (this.context.pendingQuestions.length > 0)
+                return this.context.pendingQuestions[0].question;
             return `Updated project based on your answer '${text}'.`;
         }
 
-        // Generate plan dynamically from NLP input
+        // Generate dynamic plan
         const { plan, questions } = await this._generatePlan(text);
         this.context.pendingQuestions = questions;
 
-        // Execute plan
         let response = "";
         for (const step of plan) {
             switch (step.action) {
@@ -169,11 +173,13 @@ class NLP {
                 case "add_asset":
                     this.graph.addAsset(step.name, step.type || "Texture", step.data || "placeholder");
                     response += `Asset '${step.name}' added.\n`; break;
-                default: response += `Unknown action: ${step.action}\n`;
+                default:
+                    response += `Unknown action: ${step.action}\n`;
             }
         }
 
-        if (this.context.pendingQuestions.length > 0) return this.context.pendingQuestions[0].question;
+        if (this.context.pendingQuestions.length > 0)
+            return this.context.pendingQuestions[0].question;
         return response || "Plan executed.";
     }
 
@@ -206,7 +212,6 @@ class NLP {
         text = text.toLowerCase();
         const plan = [], questions = [];
 
-        // Example game types
         if (/snake/.test(text)) {
             plan.push({ action: "create_scene", name: "SnakeScene" });
             plan.push({
@@ -239,6 +244,17 @@ class NLP {
             questions.push({ id: "viewType", question: "Top-down or side-view?" });
             questions.push({ id: "actionButtons", question: "How many action buttons?" });
             questions.push({ id: "menuStyle", question: "What style should the menu have?" });
+        } else if (/3d/.test(text)) {
+            plan.push({ action: "create_scene", name: "Main3DScene", rootType: "Spatial" });
+            plan.push({
+                action: "add_node",
+                scene: "Main3DScene",
+                name: "Player3D",
+                type: "KinematicBody3D",
+                script: { name: "Player3DController.gd", code: this._player3DScript() }
+            });
+            plan.push({ action: "add_node", scene: "Main3DScene", name: "Camera3D", type: "Camera3D" });
+            plan.push({ action: "add_node", scene: "Main3DScene", name: "Light", type: "DirectionalLight3D" });
         } else {
             plan.push({ action: "create_scene", name: "MainScene" });
             plan.push({ action: "add_node", scene: "MainScene", name: "Player", type: "Node2D" });
@@ -247,9 +263,6 @@ class NLP {
         return { plan, questions };
     }
 
-    // ------------------------------
-    // Dynamic script templates
-    // ------------------------------
     _snakeScript() {
         return `extends Node2D
 var speed = 200
@@ -265,6 +278,16 @@ func _physics_process(delta):
     var input = Vector2(Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left"),
                         Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up"))
     move_and_slide(input.normalized() * speed)`;
+    }
+
+    _player3DScript() {
+        return `extends KinematicBody3D
+var speed = 5
+func _physics_process(delta):
+    var dir = Vector3()
+    dir.x = Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left")
+    dir.z = Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
+    move_and_slide(dir.normalized() * speed, Vector3.UP)`;
     }
 }
 
