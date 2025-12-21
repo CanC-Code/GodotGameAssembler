@@ -1,18 +1,56 @@
 // project_manager.js
 // Author: CCVO
 // Purpose: Browser-side ProjectManager for GodotGameAssembler
-// Combines ProjectGraph, SceneComposer, and AssetHandler
+// Combines ProjectGraph, SceneComposer, AssetHandler, and ZIP export
 
-class ProjectGraph {
+// ------------------------------
+// AssetHandler
+// ------------------------------
+class AssetHandler {
     constructor() {
-        this.scenes = {}; // scene_name -> { nodes, scripts, root_node_type }
-        this.assets = {}; // asset_path -> { type, data, original_name }
+        this.assets = {}; // key=assetPath, value={type, data, original_name}
     }
 
-    // ------------------------------
-    // Scene Management
-    // ------------------------------
+    addAsset(assetPath, assetType, assetData) {
+        if (this.assets[assetPath]) {
+            console.warn(`Asset '${assetPath}' already exists.`);
+            return false;
+        }
+        this.assets[assetPath] = {
+            type: assetType,
+            data: assetData,
+            original_name: assetPath.split("/").pop()
+        };
+        return true;
+    }
 
+    getAsset(assetPath) {
+        return this.assets[assetPath] || null;
+    }
+
+    listAssets() {
+        return Object.keys(this.assets);
+    }
+
+    // Exports assets into a JSZip instance
+    exportAssets(zipFolderPath, zipInstance) {
+        for (const assetPath in this.assets) {
+            const fullPath = `${zipFolderPath}/${assetPath}`;
+            zipInstance.file(fullPath, this.assets[assetPath].data);
+        }
+    }
+}
+
+// ------------------------------
+// ProjectGraph
+// ------------------------------
+class ProjectGraph {
+    constructor() {
+        this.scenes = {}; // sceneName -> { nodes, scripts, root_node_type }
+        this.assets = {}; // assetPath -> { type, data, original_name }
+    }
+
+    // Scene API
     addScene(sceneName) {
         if (this.scenes[sceneName]) {
             console.warn(`Scene '${sceneName}' already exists.`);
@@ -51,21 +89,14 @@ class ProjectGraph {
         return true;
     }
 
-    // ------------------------------
-    // Asset Management
-    // ------------------------------
-
+    // Asset API (optional duplicate for GUI convenience)
     addAsset(assetPath, assetType, assetData) {
         if (this.assets[assetPath]) {
-            console.warn(`Asset '${assetPath}' already exists.`);
+            console.warn(`Asset '${assetPath}' already exists in ProjectGraph.`);
             return false;
         }
         this.assets[assetPath] = { type: assetType, data: assetData, original_name: assetPath.split("/").pop() };
         return true;
-    }
-
-    getAsset(assetPath) {
-        return this.assets[assetPath] || null;
     }
 
     listAssets() {
@@ -73,6 +104,9 @@ class ProjectGraph {
     }
 }
 
+// ------------------------------
+// SceneComposer
+// ------------------------------
 class SceneComposer {
     constructor(projectGraph) {
         this.projectGraph = projectGraph;
@@ -113,6 +147,9 @@ class SceneComposer {
     }
 }
 
+// ------------------------------
+// ZipExporter
+// ------------------------------
 class ZipExporter {
     constructor(projectGraph, sceneComposer, assetHandler) {
         this.projectGraph = projectGraph;
@@ -141,15 +178,13 @@ class ZipExporter {
         const introScene = `[node name="MadeByIntro" type="Label" parent=""]\ntext = "Made with GodotGameAssembler by CCVO"\n`;
         zip.file(`${projectName}/MadeByIntro.tscn`, introScene);
 
-        const content = await zip.generateAsync({ type: "blob" });
-        return content;
+        return await zip.generateAsync({ type: "blob" });
     }
 }
 
 // ------------------------------
-// Global Singleton
+// Global ProjectManager Singleton
 // ------------------------------
-
 const ProjectManager = {
     projectGraph: new ProjectGraph(),
     assetHandler: new AssetHandler(),
@@ -165,27 +200,23 @@ const ProjectManager = {
     add_scene(name) { return this.projectGraph.addScene(name); },
     add_node(scene, node, type, parent) { return this.projectGraph.addNode(scene, node, type, parent); },
     add_script(scene, scriptName, code) { return this.projectGraph.addScript(scene, scriptName, code); },
-
-    // --- Node API ---
-    attach_script(scene, node, script) { return this.projectGraph.attachScriptToNode(scene, node, script); },
+    attach_script(scene, node, scriptName) { return this.projectGraph.attachScriptToNode(scene, node, scriptName); },
 
     // --- Asset API ---
     upload_asset(path, type, data) { return this.assetHandler.addAsset(path, type, data); },
-    list_assets() { return this.projectGraph.listAssets(); },
+    list_assets() { return this.assetHandler.listAssets(); },
 
     // --- Export API ---
     async generate_project(projectName) { return await this.zipExporter.generateZip(projectName); },
 
     // --- NLP placeholder ---
-    process_nlp_command(cmd) {
-        // Example: just echo for now
-        return `Processed command: ${cmd}`;
-    },
+    process_nlp_command(cmd) { return `Processed command: ${cmd}`; },
 
+    // Debug helpers
     get_scenes() { return this.projectGraph.scenes; },
     get_scene_file(name) { return this.sceneComposer._generateSceneFile(name, this.projectGraph.getScene(name)); }
 };
 
-// Initialize on load
+// Initialize singleton
 ProjectManager.init();
 window.ProjectManager = ProjectManager;
