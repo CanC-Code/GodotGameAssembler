@@ -113,7 +113,6 @@ class ZipExporter {
             zip.file(`${projectName}/assets/${path}`, this.graph.assets[path].data);
         }
 
-        // Android placeholders
         zip.file(`${projectName}/export_presets.cfg`, `[preset]\nname="Android"\ntarget="Android"`);
         zip.file(`${projectName}/AndroidManifest.xml`, `<manifest package="org.godotgame.${projectName}"></manifest>`);
 
@@ -403,16 +402,20 @@ const ProjectManager={
     get_scene_file(name){return this.composer.composeScene(name);},
 
     // ------------------------------
-    // NLP wrapper for auto Promise handling
+    // NLP wrapper: auto-resolve & return response
     // ------------------------------
-    process_nlp(command){
+    process_nlp: async function(command){
         appendNLP(`> ${command}`);
-        this.process_nlp_command(command).then(response=>{
+        try {
+            const response = await this.process_nlp_command(command);
             appendNLP(response);
-        }).catch(err=>{
-            appendNLP(`Error: ${err}`);
+            return response;  // now returns string, not Promise
+        } catch (err) {
+            const errMsg = `Error: ${err}`;
+            appendNLP(errMsg);
             console.error(err);
-        });
+            return errMsg;
+        }
     }
 };
 
