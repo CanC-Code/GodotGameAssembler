@@ -1,7 +1,7 @@
 // project_manager.js
 // Author: CCVO
-// Purpose: GodotGameAssembler Ultimate Android-ready Next-Gen Project Manager
-// Features: 2D/3D, UI, physics, touch input, animation, audio, networking, dynamic NLP
+// Purpose: GodotGameAssembler Ultimate Android-ready 2D/3D ProjectManager
+// Features: 2D/3D, UI, touch input, animations, physics, networking, multiplayer, NLP interactive game building
 
 // ------------------------------
 // Core ProjectGraph
@@ -47,7 +47,7 @@ class ProjectGraph {
 }
 
 // ------------------------------
-// SceneComposer (Godot-ready .tscn generator)
+// SceneComposer
 // ------------------------------
 class SceneComposer {
     constructor(graph) { this.graph = graph; }
@@ -125,7 +125,7 @@ class ZipExporter {
 }
 
 // ------------------------------
-// NLP Engine with full Godot & Android knowledge
+// NLP Engine with 2D/3D & Multiplayer
 // ------------------------------
 class NLP {
     constructor(graph) {
@@ -135,6 +135,7 @@ class NLP {
             currentScene: null,
             pendingQuestions: [],
             answers: {},
+            multiplayerEnabled: false
         };
     }
 
@@ -142,7 +143,6 @@ class NLP {
         const text = input.trim();
         this.history.push(text);
 
-        // Handle pending questions first
         if (this.context.pendingQuestions.length > 0) {
             const q = this.context.pendingQuestions.shift();
             this.context.answers[q.id] = text;
@@ -152,7 +152,6 @@ class NLP {
             return `Updated project based on your answer '${text}'.`;
         }
 
-        // Generate dynamic plan
         const { plan, questions } = await this._generatePlan(text);
         this.context.pendingQuestions = questions;
 
@@ -170,6 +169,12 @@ class NLP {
                         this.graph.attachScript(step.scene, step.name, step.script.name);
                     }
                     response += `Node '${step.name}' added to scene '${step.scene}'.\n`; break;
+                case "add_animation":
+                    await this._addAnimation(step.scene, step.node, step.animations);
+                    response += `Animations added to '${step.node}'.\n`; break;
+                case "enable_multiplayer":
+                    this._setupMultiplayer(step.scene, step.mode);
+                    response += `Multiplayer enabled for scene '${step.scene}'.\n`; break;
                 case "add_asset":
                     this.graph.addAsset(step.name, step.type || "Texture", step.data || "placeholder");
                     response += `Asset '${step.name}' added.\n`; break;
@@ -185,109 +190,101 @@ class NLP {
 
     async _applyAnswer(id, answer) {
         const scene = this.context.currentScene;
-        const sceneData = this.graph.getScene(scene);
-        if (!sceneData) return;
-        switch (id) {
-            case "viewType":
-                const player = sceneData.nodes["Player"];
-                if (player) player.properties.viewType = answer; break;
+        if (!scene) return;
+
+        switch(id) {
             case "actionButtons":
                 const n = parseInt(answer, 10) || 3;
                 for (let i = 1; i <= n; i++) {
-                    const btn = `Button${i}`;
-                    this.graph.addNode(scene, btn, "TouchScreenButton", "UI");
-                    this.graph.addScript(`${btn}_script.gd`, `extends TouchScreenButton\n# Button ${i}`);
-                    this.graph.attachScript(scene, btn, `${btn}_script.gd`);
-                } break;
-            case "menuStyle":
-                const uiNode = sceneData.nodes["UI"];
-                if (uiNode) uiNode.properties.style = answer; break;
-            case "cameraType":
-                const camNode = sceneData.nodes["Camera"];
-                if (camNode) camNode.properties.type = answer; break;
+                    const btnName = `Button${i}`;
+                    this.graph.addNode(scene, btnName, "TouchScreenButton", "UI");
+                    this.graph.addScript(`${btnName}_script.gd`,
+                        `extends TouchScreenButton\nfunc _pressed():\n    print("${btnName} pressed")`);
+                    this.graph.attachScript(scene, btnName, `${btnName}_script.gd`);
+                }
+                break;
+            case "animationType":
+                await this._addAnimation(scene, "Player", [answer]);
+                break;
+            case "multiplayerType":
+                this._setupMultiplayer(scene, answer);
+                break;
         }
+    }
+
+    async _addAnimation(sceneName, nodeName, animTypes = ["move"]) {
+        const animPlayerName = `${nodeName}_AnimationPlayer`;
+        this.graph.addNode(sceneName, animPlayerName, "AnimationPlayer", nodeName);
+        const scriptCode = `extends AnimationPlayer
+func _ready():
+    # Template animations: ${animTypes.join(", ")}
+    pass`;
+        const scriptName = `${animPlayerName}.gd`;
+        this.graph.addScript(scriptName, scriptCode);
+        this.graph.attachScript(sceneName, animPlayerName, scriptName);
+    }
+
+    _setupMultiplayer(sceneName, type = "ENet") {
+        this.context.multiplayerEnabled = true;
+        const mpNode = "Multiplayer";
+        this.graph.addNode(sceneName, mpNode, "Node");
+        const scriptCode = `extends Node
+var peer
+func _ready():
+    peer = ${type}MultiplayerPeer.new()
+    multiplayer.multiplayer_peer = peer
+func rpc_move(id, pos, rot, anim_state):
+    rpc_id(id, "sync_state", pos, rot, anim_state)`;
+        const scriptName = "Multiplayer.gd";
+        this.graph.addScript(scriptName, scriptCode);
+        this.graph.attachScript(sceneName, mpNode, scriptName);
     }
 
     async _generatePlan(text) {
-        text = text.toLowerCase();
         const plan = [], questions = [];
+        text = text.toLowerCase();
 
-        if (/snake/.test(text)) {
-            plan.push({ action: "create_scene", name: "SnakeScene" });
+        if (/rpg|3d/.test(text)) {
+            plan.push({ action: "create_scene", name: "3DMultiplayerScene", rootType: "Node" });
             plan.push({
                 action: "add_node",
-                scene: "SnakeScene",
-                name: "SnakeHead",
-                type: "Node2D",
-                script: { name: "SnakeController.gd", code: this._snakeScript() }
-            });
-            plan.push({ action: "add_node", scene: "SnakeScene", name: "Food", type: "Node2D" });
-            plan.push({ action: "add_asset", name: "snake_head.png" });
-            plan.push({ action: "add_asset", name: "food.png" });
-            questions.push({ id: "actionButtons", question: "How many action buttons?" });
-        } else if (/rpg/.test(text)) {
-            plan.push({ action: "create_scene", name: "RPGScene" });
-            plan.push({
-                action: "add_node",
-                scene: "RPGScene",
+                scene: "3DMultiplayerScene",
                 name: "Player",
-                type: "KinematicBody2D",
-                script: { name: "PlayerController.gd", code: this._rpgPlayerScript() }
+                type: "KinematicBody",
+                script: {
+                    name: "Player3D.gd",
+                    code: `extends KinematicBody
+var speed = 8
+var anim_state = ""
+onready var anim = $AnimationPlayer
+
+func _physics_process(delta):
+    var dir = Vector3()
+    dir.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
+    dir.z = Input.get_action_strength("move_backward") - Input.get_action_strength("move_forward")
+    dir = dir.normalized()
+    move_and_slide(dir * speed)
+    if dir.length() > 0:
+        anim.play("Run")
+        anim_state = "Run"
+    else:
+        anim.play("Idle")
+        anim_state = "Idle"
+
+remote func sync_state(pos, rot, anim_s):
+    translation = pos
+    rotation = rot
+    anim.play(anim_s)`
+                }
             });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "UI", type: "CanvasLayer" });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "Enemies", type: "Node2D" });
-            plan.push({ action: "add_node", scene: "RPGScene", name: "WorldMap", type: "TileMap" });
-            plan.push({ action: "add_asset", name: "player.png" });
-            plan.push({ action: "add_asset", name: "npc.png" });
-            plan.push({ action: "add_asset", name: "enemy.png" });
-            plan.push({ action: "add_asset", name: "tiles.png" });
-            questions.push({ id: "viewType", question: "Top-down or side-view?" });
+            plan.push({ action: "add_node", scene: "3DMultiplayerScene", name: "Camera", type: "Camera", parent: "Player" });
+            plan.push({ action: "add_node", scene: "3DMultiplayerScene", name: "UI", type: "CanvasLayer" });
             questions.push({ id: "actionButtons", question: "How many action buttons?" });
-            questions.push({ id: "menuStyle", question: "What style should the menu have?" });
-        } else if (/3d/.test(text)) {
-            plan.push({ action: "create_scene", name: "Main3DScene", rootType: "Spatial" });
-            plan.push({
-                action: "add_node",
-                scene: "Main3DScene",
-                name: "Player3D",
-                type: "KinematicBody3D",
-                script: { name: "Player3DController.gd", code: this._player3DScript() }
-            });
-            plan.push({ action: "add_node", scene: "Main3DScene", name: "Camera3D", type: "Camera3D" });
-            plan.push({ action: "add_node", scene: "Main3DScene", name: "Light", type: "DirectionalLight3D" });
-        } else {
-            plan.push({ action: "create_scene", name: "MainScene" });
-            plan.push({ action: "add_node", scene: "MainScene", name: "Player", type: "Node2D" });
+            questions.push({ id: "animationType", question: "Animation types for Player? (Idle,Run,Jump)" });
+            questions.push({ id: "multiplayerType", question: "Enable multiplayer? (ENet/WebSocket)" });
         }
 
         return { plan, questions };
-    }
-
-    _snakeScript() {
-        return `extends Node2D
-var speed = 200
-var dir = Vector2.RIGHT
-func _process(delta):
-    position += dir * speed * delta`;
-    }
-
-    _rpgPlayerScript() {
-        return `extends KinematicBody2D
-var speed = 200
-func _physics_process(delta):
-    var input = Vector2(Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left"),
-                        Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up"))
-    move_and_slide(input.normalized() * speed)`;
-    }
-
-    _player3DScript() {
-        return `extends KinematicBody3D
-var speed = 5
-func _physics_process(delta):
-    var dir = Vector3()
-    dir.x = Input.get_action_strength("ui_right") - Input.get_action_strength("ui_left")
-    dir.z = Input.get_action_strength("ui_down") - Input.get_action_strength("ui_up")
-    move_and_slide(dir.normalized() * speed, Vector3.UP)`;
     }
 }
 
