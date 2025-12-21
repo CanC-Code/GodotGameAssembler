@@ -3,26 +3,60 @@
 <head>
 <meta charset="UTF-8">
 <title>Godot Game Assembler</title>
-<style>
-body { font-family: monospace; background:#111; color:#eee; }
-#nlp-log { white-space: pre-wrap; height:300px; overflow:auto; border:1px solid #444; padding:8px; }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
-<div id="nlp-log"></div>
-<input id="nlp-command" placeholder="Type a command..." />
-<button onclick="sendNLPCommandGUI()">Send</button>
+<header>
+  Godot Game Assembler
+</header>
 
-<script src="core/project_graph.js"></script></script>
+<div id="app-root">
+
+  <!-- TOP WORKSPACE -->
+  <div id="workspace">
+
+    <!-- LEFT SIDEBAR -->
+    <div id="sidebar" class="panel">
+      <div class="panel-title">Project</div>
+      <div id="project-tree" class="panel-content">
+        <em>No scenes</em>
+      </div>
+    </div>
+
+    <!-- RIGHT INSPECTOR -->
+    <div id="inspector" class="panel">
+      <div class="panel-title">Inspector</div>
+      <div id="file-info">
+        <em>Select an item</em>
+      </div>
+      <div id="file-preview">
+        <em>Preview area</em>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- NLP CONSOLE -->
+  <div id="nlp-console" class="panel">
+    <div class="panel-title">NLP Console</div>
+    <div id="nlp-log"></div>
+    <div class="nlp-input-row">
+      <input id="nlp-command" placeholder="Type a command..." />
+      <button id="nlp-send">Send</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- CORE -->
+<script src="core/project_graph.js"></script>
 <script src="asset_manager/asset_handler.js"></script>
 <script src="libs/scene_composer.js"></script>
-
 <script src="export/zip_exporter.js"></script>
 
-<script src="libs/jszip.min.js"></script>
-<script src="libs/FileSaver.min.js"></script>
-
+<!-- LOGIC -->
 <script src="libs/nlp_pro.js"></script>
 <script src="libs/project_manager.js"></script>
 <script src="godot.js"></script>
