@@ -1,7 +1,5 @@
-// godot.js
-// UI bootstrap + project reflection
-
-(function () {
+// godot.js — safe DOM-ready
+document.addEventListener("DOMContentLoaded", () => {
 
     if (!window.ProjectManager) {
         throw new Error("ProjectManager not loaded");
@@ -58,11 +56,16 @@
         log.scrollTop = log.scrollHeight;
     };
 
-    document.getElementById("nlp-send")
-        .addEventListener("click", window.sendNLPCommandGUI);
+    const sendBtn = document.getElementById("nlp-send");
+    sendBtn.addEventListener("click", window.sendNLPCommandGUI);
+
+    // Also allow Enter key to send
+    document.getElementById("nlp-command").addEventListener("keydown", (e) => {
+        if (e.key === "Enter") window.sendNLPCommandGUI();
+    });
 
     renderProjectTree();
 
     console.log("GUI initialized");
 
-})();
+});
