@@ -2,141 +2,24 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GodotGameAssembler</title>
-<link rel="stylesheet" href="style.css">
+<title>Godot Game Assembler</title>
+<style>
+body { font-family: monospace; background:#111; color:#eee; }
+#nlp-log { white-space: pre-wrap; height:300px; overflow:auto; border:1px solid #444; padding:8px; }
+</style>
 </head>
 <body>
-<header>GodotGameAssembler</header>
 
-<div id="container">
-  <!-- Scene & Node Manager -->
-  <div class="panel" id="scene-manager">
-    <h3>Scenes & Nodes</h3>
-    <input type="text" id="scene-name" placeholder="Scene name">
-    <button onclick="addSceneGUI()">Add Scene</button>
-    <div id="scene-list"></div>
-    <hr>
-    <input type="text" id="node-name" placeholder="Node name">
-    <select id="node-type">
-      <option>Node2D</option>
-      <option>Sprite</option>
-      <option>Label</option>
-      <option>Control</option>
-      <option>Area2D</option>
-      <option>Camera2D</option>
-    </select>
-    <input type="text" id="parent-name" placeholder="Parent node (optional)">
-    <button onclick="addNodeGUI()">Add Node</button>
-    <div id="node-list"></div>
-  </div>
+<div id="nlp-log"></div>
+<input id="nlp-command" placeholder="Type a command..." />
+<button onclick="sendNLPCommandGUI()">Send</button>
 
-  <!-- Asset Manager -->
-  <div class="panel" id="asset-manager">
-    <h3>Assets</h3>
-    <input type="file" id="asset-upload" multiple>
-    <select id="asset-type">
-      <option value="texture">Texture</option>
-      <option value="gltf">GLTF Model</option>
-      <option value="audio">Audio</option>
-      <option value="font">Font</option>
-    </select>
-    <button onclick="uploadAssetsGUI()">Upload Asset(s)</button>
-    <ul id="asset-list"></ul>
-  </div>
-
-  <!-- Project Export -->
-  <div class="panel" id="export-panel">
-    <h3>Export Project</h3>
-    <input type="text" id="project-name" placeholder="Project Name">
-    <button onclick="generateProjectGUI()">Generate & Download ZIP</button>
-    <div id="export-status"></div>
-  </div>
-
-  <!-- NLP Interface -->
-  <div class="panel" id="nlp-panel">
-    <h3>Conversation & NLP</h3>
-    <div id="nlp-interface"></div>
-    <input type="text" id="nlp-command" placeholder="Type command here">
-    <button onclick="sendNLPCommandGUI()">Send</button>
-  </div>
-</div>
-
-<!-- Libraries -->
 <script src="libs/jszip.min.js"></script>
 <script src="libs/FileSaver.min.js"></script>
-<script src="libs/project_manager.js"></script>
 
-<script>
-function appendNLP(message) {
-  const panel = document.getElementById("nlp-interface");
-  panel.innerHTML += `<div>${message}</div>`;
-  panel.scrollTop = panel.scrollHeight;
-}
+<script src="export/nlp_pro.js"></script>
+<script src="export/project_manager.js"></script>
+<script src="export/godot.js"></script>
 
-// --- Scene GUI ---
-function addSceneGUI() {
-  const name = document.getElementById("scene-name").value.trim();
-  if(!name) return alert("Enter scene name");
-  ProjectManager.add_scene(name);
-  document.getElementById("scene-list").innerHTML += `<div>${name}</div>`;
-  appendNLP(`Scene '${name}' added.`);
-}
-
-function addNodeGUI() {
-  const nodeName = document.getElementById("node-name").value.trim();
-  const nodeType = document.getElementById("node-type").value;
-  const parent = document.getElementById("parent-name").value.trim();
-  const sceneList = document.getElementById("scene-list").children;
-  if(sceneList.length === 0) return alert("Add a scene first");
-  const sceneName = sceneList[sceneList.length-1].innerText;
-  ProjectManager.add_node(sceneName, nodeName, nodeType, parent);
-  document.getElementById("node-list").innerHTML += `<div>${nodeName} (${nodeType})</div>`;
-  appendNLP(`Node '${nodeName}' of type '${nodeType}' added to scene '${sceneName}'.`);
-}
-
-// --- Asset GUI ---
-function uploadAssetsGUI() {
-  const files = document.getElementById("asset-upload").files;
-  const type = document.getElementById("asset-type").value;
-  const list = document.getElementById("asset-list");
-  if(files.length === 0) return alert("Select files to upload");
-
-  for(let file of files){
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const arrayBuffer = e.target.result;
-      const uint8 = new Uint8Array(arrayBuffer);
-      ProjectManager.upload_asset(file.name, type, uint8);
-      list.innerHTML += `<li>${file.name} (${type})</li>`;
-      appendNLP(`Asset '${file.name}' uploaded as ${type}.`);
-    };
-    reader.readAsArrayBuffer(file);
-  }
-}
-
-// --- Export GUI ---
-async function generateProjectGUI() {
-  const projectName = document.getElementById("project-name").value.trim() || "GodotProject";
-  const status = document.getElementById("export-status");
-  status.innerText = "Generating project ZIP...";
-  appendNLP(`Generating project '${projectName}'...`);
-
-  const zipBlob = await ProjectManager.generate_project(projectName);
-  saveAs(zipBlob, `${projectName}.zip`);
-  status.innerText = `Project '${projectName}' ZIP ready for download.`;
-  appendNLP(`Project '${projectName}' generated and ready for download.`);
-}
-
-// --- NLP GUI ---
-function sendNLPCommandGUI() {
-  const cmd = document.getElementById("nlp-command").value.trim();
-  if(!cmd) return;
-  appendNLP(`> ${cmd}`);
-  document.getElementById("nlp-command").value = "";
-  const response = ProjectManager.process_nlp_command(cmd);
-  appendNLP(response);
-}
-</script>
 </body>
 </html>
