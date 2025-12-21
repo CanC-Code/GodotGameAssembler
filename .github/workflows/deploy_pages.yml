@@ -3,7 +3,7 @@ name: Deploy GodotGameAssembler Pages
 on:
   push:
     branches:
-      - main  # Trigger on main branch updates
+      - main
 
 # Required for private repos to allow pushing
 permissions:
@@ -31,7 +31,7 @@ jobs:
       - name: Prepare gh-pages branch
         run: |
           git fetch origin gh-pages || true
-          git checkout -B gh-pages
+          git checkout gh-pages || git checkout -b gh-pages
 
       # 4. Clean old interface files only
       - name: Clean old interface files
@@ -43,11 +43,15 @@ jobs:
         run: |
           git checkout main -- index.html libs godot.js
 
-      # 6. Commit changes
+      # 6. Commit changes if any
       - name: Commit changes
         run: |
           git add index.html libs godot.js
-          git commit -m "Deploy GodotGameAssembler interface" || echo "No changes to commit"
+          if ! git diff --cached --quiet; then
+            git commit -m "Deploy GodotGameAssembler interface - $(date +'%Y-%m-%d %H:%M:%S')"
+          else
+            echo "No changes to commit"
+          fi
 
       # 7. Push to gh-pages using GITHUB_TOKEN
       - name: Push to gh-pages
