@@ -1,71 +1,82 @@
-// godot.js — safe DOM-ready
-document.addEventListener("DOMContentLoaded", () => {
+// godot.js
+// Handles GUI interactions for Godot Game Assembler
 
-    if (!window.ProjectManager) {
-        throw new Error("ProjectManager not loaded");
+(function () {
+
+    const pm = window.ProjectManager;
+    if (!pm) throw new Error("ProjectManager not loaded");
+
+    const nlpLog = document.getElementById("nlp-log");
+    const nlpInput = document.getElementById("nlp-command");
+    const nlpSend = document.getElementById("nlp-send");
+
+    // ------------------------------
+    // NLP Logging Helper
+    // ------------------------------
+    function logNLP(text, prefix = "> ") {
+        nlpLog.textContent += `${prefix}${text}\n`;
+        nlpLog.scrollTop = nlpLog.scrollHeight;
     }
 
-    const treeEl = document.getElementById("project-tree");
+    // ------------------------------
+    // Send NLP Command
+    // ------------------------------
+    async function sendNLPCommand() {
+        const cmd = nlpInput.value.trim();
+        if (!cmd) return;
 
+        logNLP(cmd);
+
+        const result = await pm.process_nlp_command(cmd);
+        logNLP(result, "");
+
+        nlpInput.value = "";
+        nlpInput.focus();
+
+        // Optional: refresh project tree after changes
+        renderProjectTree();
+    }
+
+    nlpSend.addEventListener("click", sendNLPCommand);
+
+    nlpInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            sendNLPCommand();
+        }
+    });
+
+    // ------------------------------
+    // Project Tree Rendering
+    // ------------------------------
+    const projectTreeEl = document.getElementById("project-tree");
     function renderProjectTree() {
-        const scenes = window.ProjectManager.get_scenes();
-        treeEl.innerHTML = "";
-
+        const scenes = pm.get_scenes();
         if (!scenes.length) {
-            treeEl.innerHTML = "<em>No scenes</em>";
+            projectTreeEl.innerHTML = "<em>No scenes</em>";
             return;
         }
 
-        scenes.forEach(scene => {
-            const div = document.createElement("div");
-            div.className = "tree-item";
-            div.textContent = scene;
-            div.onclick = () => selectScene(scene, div);
-            treeEl.appendChild(div);
+        projectTreeEl.innerHTML = "";
+        scenes.forEach(sceneName => {
+            const sceneItem = document.createElement("div");
+            sceneItem.className = "tree-item";
+            sceneItem.textContent = sceneName;
+
+            sceneItem.addEventListener("click", () => {
+                document.querySelectorAll(".tree-item").forEach(el => el.classList.remove("selected"));
+                sceneItem.classList.add("selected");
+
+                const sceneFile = pm.get_scene_file(sceneName);
+                document.getElementById("file-info").textContent = sceneFile;
+                document.getElementById("file-preview").textContent = sceneFile;
+            });
+
+            projectTreeEl.appendChild(sceneItem);
         });
     }
 
-    function selectScene(scene, el) {
-        document.querySelectorAll(".tree-item")
-            .forEach(n => n.classList.remove("selected"));
-        el.classList.add("selected");
-
-        document.getElementById("file-info").textContent =
-            `Scene: ${scene}`;
-
-        document.getElementById("file-preview").textContent =
-            window.ProjectManager.get_scene_file(scene);
-    }
-
-    window.sendNLPCommandGUI = async function () {
-        const input = document.getElementById("nlp-command");
-        const log = document.getElementById("nlp-log");
-
-        const command = input.value.trim();
-        if (!command) return;
-
-        log.textContent += `> ${command}\n`;
-        input.value = "";
-
-        const result =
-            await window.ProjectManager.process_nlp_command(command);
-
-        if (result) log.textContent += `${result}\n`;
-
-        renderProjectTree();
-        log.scrollTop = log.scrollHeight;
-    };
-
-    const sendBtn = document.getElementById("nlp-send");
-    sendBtn.addEventListener("click", window.sendNLPCommandGUI);
-
-    // Also allow Enter key to send
-    document.getElementById("nlp-command").addEventListener("keydown", (e) => {
-        if (e.key === "Enter") window.sendNLPCommandGUI();
-    });
-
+    // Initial render
     renderProjectTree();
 
-    console.log("GUI initialized");
-
-});
+})();
