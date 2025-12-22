@@ -223,7 +223,7 @@ function suggestAndroidControls() {
 }
 
 // ------------------------------
-// Touch Layout Editor
+// Touch Layout Editor (FULL)
 // ------------------------------
 function openTouchEditor() {
     if (!GodotState.currentScene) {
@@ -231,7 +231,28 @@ function openTouchEditor() {
         return;
     }
 
-    const editor = document.getElementById("touch-editor");
+    let editor = document.getElementById("touch-editor");
+    if (!editor) {
+        editor = document.createElement("div");
+        editor.id = "touch-editor";
+        editor.innerHTML = `
+            <div id="editor-header">
+                <button id="save-editor">Save</button>
+                <button id="close-editor">Cancel</button>
+            </div>
+            <div id="editor-canvas"></div>
+        `;
+        document.body.appendChild(editor);
+
+        document.getElementById("close-editor").addEventListener("click", () => {
+            editor.style.display = "none";
+        });
+        document.getElementById("save-editor").addEventListener("click", () => {
+            editor.style.display = "none";
+            addMessage("system", "Touch layout saved for this scene.");
+        });
+    }
+
     const canvas = document.getElementById("editor-canvas");
     canvas.innerHTML = "";
 
@@ -248,6 +269,19 @@ function openTouchEditor() {
         el.style.background = node.type === "thumbstick" ? "rgba(0,150,255,0.5)" : "rgba(0,255,100,0.5)";
         el.style.borderRadius = node.type === "thumbstick" ? "50%" : "10%";
         el.style.cursor = "grab";
+
+        // Node label
+        const label = document.createElement("div");
+        label.className = "node-label";
+        label.innerText = node.name;
+        label.style.position = "absolute";
+        label.style.bottom = "-16px";
+        label.style.width = "100%";
+        label.style.textAlign = "center";
+        label.style.fontSize = "10px";
+        label.style.pointerEvents = "none";
+        label.style.color = "#fff";
+        el.appendChild(label);
 
         const xPct = node.touchPosition?.x || 0.1;
         const yPct = node.touchPosition?.y || 0.8;
@@ -300,15 +334,6 @@ function makeDraggable(el, container, node) {
     document.addEventListener("touchmove", e => pointerMove(e.touches[0]));
     document.addEventListener("touchend", pointerUp);
 }
-
-// Editor Buttons
-document.getElementById("close-editor").addEventListener("click", () => {
-    document.getElementById("touch-editor").style.display = "none";
-});
-document.getElementById("save-editor").addEventListener("click", () => {
-    document.getElementById("touch-editor").style.display = "none";
-    addMessage("system", "Touch layout saved for this scene.");
-});
 
 // ------------------------------
 // Input Processing
