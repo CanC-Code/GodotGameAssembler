@@ -1,6 +1,6 @@
 // godot.js
 // Author: CCVO
-// Purpose: Dynamic guidance with Android touch UI and touch layout editor
+// Purpose: Dynamic guidance with Android touch UI and touch layout editor (fully integrated with ProjectGraph)
 
 // ------------------------------
 // Global State
@@ -48,8 +48,11 @@ function updateInfoPanel() {
         if (nodes.length > 0) {
             const nodeList = document.createElement("ul");
             nodes.forEach(node => {
+                const posText = node.touchPosition
+                    ? ` → Touch: x=${node.touchPosition.x.toFixed(2)}, y=${node.touchPosition.y.toFixed(2)}`
+                    : "";
                 const nodeItem = document.createElement("li");
-                nodeItem.innerText = `${node.name} (${node.type})${node.script ? ` → Script: ${node.script}` : ""}`;
+                nodeItem.innerText = `${node.name} (${node.type})${node.script ? ` → Script: ${node.script}` : ""}${posText}`;
                 nodeList.appendChild(nodeItem);
             });
             infoPanel.appendChild(nodeList);
@@ -147,7 +150,7 @@ function handleSuggestionClick(action) {
         case "Add UI":
             chatInput.value = `add node StartButton Button to ${GodotState.currentScene}`;
             chatInput.focus();
-            addMessage("system", "Auto-filled UI node addition. Press Enter to execute.");
+            addMessage("system", "Auto-filled UI node addition. Press Enter.");
             break;
         case "Set Spawn Position":
             chatInput.focus();
@@ -223,7 +226,7 @@ function suggestAndroidControls() {
 }
 
 // ------------------------------
-// Touch Layout Editor (FULL)
+// Touch Layout Editor
 // ------------------------------
 function openTouchEditor() {
     if (!GodotState.currentScene) {
@@ -231,28 +234,7 @@ function openTouchEditor() {
         return;
     }
 
-    let editor = document.getElementById("touch-editor");
-    if (!editor) {
-        editor = document.createElement("div");
-        editor.id = "touch-editor";
-        editor.innerHTML = `
-            <div id="editor-header">
-                <button id="save-editor">Save</button>
-                <button id="close-editor">Cancel</button>
-            </div>
-            <div id="editor-canvas"></div>
-        `;
-        document.body.appendChild(editor);
-
-        document.getElementById("close-editor").addEventListener("click", () => {
-            editor.style.display = "none";
-        });
-        document.getElementById("save-editor").addEventListener("click", () => {
-            editor.style.display = "none";
-            addMessage("system", "Touch layout saved for this scene.");
-        });
-    }
-
+    const editor = document.getElementById("touch-editor");
     const canvas = document.getElementById("editor-canvas");
     canvas.innerHTML = "";
 
@@ -270,19 +252,6 @@ function openTouchEditor() {
         el.style.borderRadius = node.type === "thumbstick" ? "50%" : "10%";
         el.style.cursor = "grab";
 
-        // Node label
-        const label = document.createElement("div");
-        label.className = "node-label";
-        label.innerText = node.name;
-        label.style.position = "absolute";
-        label.style.bottom = "-16px";
-        label.style.width = "100%";
-        label.style.textAlign = "center";
-        label.style.fontSize = "10px";
-        label.style.pointerEvents = "none";
-        label.style.color = "#fff";
-        el.appendChild(label);
-
         const xPct = node.touchPosition?.x || 0.1;
         const yPct = node.touchPosition?.y || 0.8;
         el.style.left = `${xPct * canvas.clientWidth}px`;
@@ -295,7 +264,9 @@ function openTouchEditor() {
     editor.style.display = "block";
 }
 
-// Draggable logic
+// ------------------------------
+// Draggable logic with ProjectGraph sync
+// ------------------------------
 function makeDraggable(el, container, node) {
     let offsetX, offsetY, dragging = false;
 
@@ -322,6 +293,13 @@ function makeDraggable(el, container, node) {
             x: x / container.clientWidth,
             y: y / container.clientHeight
         };
+
+        // Update ProjectGraph immediately
+        if (window.ProjectGraph) {
+            ProjectGraph.setNodeTouchPosition(GodotState.currentScene, node.name, node.touchPosition);
+        }
+
+        updateInfoPanel();
     }
 
     function pointerUp() { dragging = false; }
@@ -334,6 +312,17 @@ function makeDraggable(el, container, node) {
     document.addEventListener("touchmove", e => pointerMove(e.touches[0]));
     document.addEventListener("touchend", pointerUp);
 }
+
+// ------------------------------
+// Editor Buttons
+// ------------------------------
+document.getElementById("close-editor").addEventListener("click", () => {
+    document.getElementById("touch-editor").style.display = "none";
+});
+document.getElementById("save-editor").addEventListener("click", () => {
+    document.getElementById("touch-editor").style.display = "none";
+    addMessage("system", "Touch layout saved for this scene.");
+});
 
 // ------------------------------
 // Input Processing
@@ -364,13 +353,26 @@ function processInput(input) {
             GodotState.lastNodeAdded = name;
             if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
             GodotState.nodesInScene[scene].push({ name, type, script: null });
+
+            // Also add to ProjectGraph
+            if (window.ProjectGraph) {
+                ProjectGraph.addNode(scene, name, type);
+            }
         }
 
         const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
         if (matchAddUI) {
             const [_, type, name, scene] = matchAddUI;
             if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
-            GodotState.nodesInScene[scene].push({ name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js" });
+            const nodeObj = { name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js", touchPosition: null };
+            GodotState.nodesInScene[scene].push(nodeObj);
+
+            // Add to ProjectGraph with initial touchPosition null
+            if (window.ProjectGraph) {
+                ProjectGraph.addNode(scene, name, type, null, null);
+            }
+
+            GodotState.lastNodeAdded = name;
         }
 
         const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
@@ -379,6 +381,11 @@ function processInput(input) {
             const nodes = GodotState.nodesInScene[scene] || [];
             const node = nodes.find(n => n.name === nodeName);
             if (node) node.script = scriptName;
+
+            // Sync with ProjectGraph
+            if (window.ProjectGraph) {
+                ProjectGraph.attachScript(scene, nodeName, scriptName);
+            }
         }
     }
 
