@@ -7,6 +7,12 @@ class NLPProcessor {
         this.state = state;
         this.chatInput = chatInput;
         this.addMessage = addMessageCallback;
+
+        // ---- CRITICAL FIX ----
+        // Ensure workflow state always exists
+        if (!this.state.workflowStage) {
+            this.state.workflowStage = "INIT";
+        }
     }
 
     process(input) {
@@ -37,19 +43,30 @@ class NLPProcessor {
                 break;
 
             default:
-                this.addMessage("system", "Workflow state not recognized.");
+                // Defensive recovery instead of dead-end
+                console.warn("Unknown workflow stage:", this.state.workflowStage);
+                this.state.workflowStage = "INIT";
+                this.addMessage(
+                    "system",
+                    "Workflow reset. Please provide your game name."
+                );
         }
     }
 
     createScene(input) {
         const match = input.match(/(?:create\s+scene\s+)?(\w+)/i);
         if (!match) {
-            this.addMessage("system", "Please provide a scene name.");
+            this.addMessage("system", "Please provide a valid scene name.");
             return;
         }
 
         const sceneName = match[1];
         this.state.currentScene = sceneName;
+
+        if (!this.state.nodesInScene) {
+            this.state.nodesInScene = {};
+        }
+
         this.state.nodesInScene[sceneName] = [];
 
         executeProjectCommand(`create scene ${sceneName}`);
