@@ -1,6 +1,6 @@
 // godot.js
 // Author: CCVO
-// Purpose: Dynamic context-aware guidance with Android touch UI integration
+// Purpose: Dynamic guidance with Android touch UI and touch layout editor
 
 // ------------------------------
 // Global State
@@ -10,22 +10,20 @@ const GodotState = {
     concept: null,
     currentScene: null,
     lastNodeAdded: null,
-    nodesInScene: {} // { sceneName: [ { name, type, script } ] }
+    nodesInScene: {} // { sceneName: [ { name, type, script, touchPosition } ] }
 };
 
 // ------------------------------
 // DOM References
 // ------------------------------
-const chatLog = document.getElementById("chat-log");
-const chatInput = document.getElementById("chat-input");
-const infoPanel = document.getElementById("info-panel");
-
-// Suggestion container
+const chatLog = document.getElementById("nlp-log");
+const chatInput = document.getElementById("nlp-command");
+const infoPanel = document.getElementById("file-info");
 let suggestionContainer = document.getElementById("suggestions");
 if (!suggestionContainer) {
     suggestionContainer = document.createElement("div");
     suggestionContainer.id = "suggestions";
-    chatLog.parentNode.appendChild(suggestionContainer);
+    chatLog.parentNode.insertBefore(suggestionContainer, chatLog.nextSibling);
 }
 
 // ------------------------------
@@ -68,11 +66,11 @@ function updateInfoPanel() {
 }
 
 // ------------------------------
-// Node Type & Post-Node Suggestions
+// Node Suggestions
 // ------------------------------
 const NodeTypeSuggestions = {
     default: ["KinematicBody", "RigidBody", "Camera", "MeshInstance", "Button", "Label", "Thumbstick", "Light"],
-    Player: ["Attach Movement Script", "Add Camera", "Add UI", "Set Spawn Position", "Add Android Controls"],
+    Player: ["Attach Movement Script", "Assign Jump Script", "Assign Interact Script", "Add Camera", "Add UI", "Set Spawn Position", "Add Android Controls", "Edit Android Touch Layout"],
     Camera: ["Set Transform", "Link to Player"],
     Button: ["Link to Scene", "Attach Script"],
     defaultPostNode: ["Add Another Node", "Attach Script", "Create New Scene", "Export Project"]
@@ -158,6 +156,9 @@ function handleSuggestionClick(action) {
         case "Add Android Controls":
             suggestAndroidControls();
             break;
+        case "Edit Android Touch Layout":
+            openTouchEditor();
+            break;
         case "Link to Scene":
             chatInput.focus();
             addMessage("system", `Use: link button <ButtonName> to scene <SceneName>`);
@@ -177,7 +178,6 @@ function handleSuggestionClick(action) {
     }
 }
 
-// Helper: attach scripts to last node
 function attachScriptToLastNode(action) {
     if (!GodotState.lastNodeAdded) {
         addMessage("system", "No node selected for script. Add a node first.");
@@ -205,25 +205,110 @@ function suggestAndroidControls() {
     const jumpButtonName = "JumpButton";
     const interactButtonName = "InteractButton";
 
-    // Add thumbstick
     chatInput.value = `add thumbstick ${thumbstickName} to ${GodotState.currentScene}`;
     chatInput.focus();
-    addMessage("system", `Auto-filled: Add movement thumbstick at default position. Press Enter.`);
+    addMessage("system", `Auto-filled: Add movement thumbstick. Press Enter.`);
 
-    // Add jump button
     setTimeout(() => {
         chatInput.value = `add button ${jumpButtonName} to ${GodotState.currentScene}`;
         chatInput.focus();
-        addMessage("system", `Auto-filled: Add jump button at default position. Press Enter.`);
+        addMessage("system", `Auto-filled: Add jump button. Press Enter.`);
     }, 500);
 
-    // Add interact button
     setTimeout(() => {
         chatInput.value = `add button ${interactButtonName} to ${GodotState.currentScene}`;
         chatInput.focus();
-        addMessage("system", `Auto-filled: Add interact button at default position. Press Enter.`);
+        addMessage("system", `Auto-filled: Add interact button. Press Enter.`);
     }, 1000);
 }
+
+// ------------------------------
+// Touch Layout Editor
+// ------------------------------
+function openTouchEditor() {
+    if (!GodotState.currentScene) {
+        addMessage("system", "No scene selected to edit touch layout.");
+        return;
+    }
+
+    const editor = document.getElementById("touch-editor");
+    const canvas = document.getElementById("editor-canvas");
+    canvas.innerHTML = "";
+
+    const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
+    const touchNodes = nodes.filter(n => n.type === "thumbstick" || n.type === "button");
+
+    touchNodes.forEach(node => {
+        const el = document.createElement("div");
+        el.className = "touch-node";
+        el.dataset.name = node.name;
+        el.style.position = "absolute";
+        el.style.width = "60px";
+        el.style.height = "60px";
+        el.style.background = node.type === "thumbstick" ? "rgba(0,150,255,0.5)" : "rgba(0,255,100,0.5)";
+        el.style.borderRadius = node.type === "thumbstick" ? "50%" : "10%";
+        el.style.cursor = "grab";
+
+        const xPct = node.touchPosition?.x || 0.1;
+        const yPct = node.touchPosition?.y || 0.8;
+        el.style.left = `${xPct * canvas.clientWidth}px`;
+        el.style.top = `${yPct * canvas.clientHeight}px`;
+
+        canvas.appendChild(el);
+        makeDraggable(el, canvas, node);
+    });
+
+    editor.style.display = "block";
+}
+
+// Draggable logic
+function makeDraggable(el, container, node) {
+    let offsetX, offsetY, dragging = false;
+
+    function pointerDown(e) {
+        e.preventDefault();
+        dragging = true;
+        const rect = el.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+    }
+
+    function pointerMove(e) {
+        if (!dragging) return;
+        let x = e.clientX - container.getBoundingClientRect().left - offsetX;
+        let y = e.clientY - container.getBoundingClientRect().top - offsetY;
+
+        x = Math.max(0, Math.min(container.clientWidth - el.clientWidth, x));
+        y = Math.max(0, Math.min(container.clientHeight - el.clientHeight, y));
+
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+
+        node.touchPosition = {
+            x: x / container.clientWidth,
+            y: y / container.clientHeight
+        };
+    }
+
+    function pointerUp() { dragging = false; }
+
+    el.addEventListener("mousedown", pointerDown);
+    document.addEventListener("mousemove", pointerMove);
+    document.addEventListener("mouseup", pointerUp);
+
+    el.addEventListener("touchstart", e => pointerDown(e.touches[0]));
+    document.addEventListener("touchmove", e => pointerMove(e.touches[0]));
+    document.addEventListener("touchend", pointerUp);
+}
+
+// Editor Buttons
+document.getElementById("close-editor").addEventListener("click", () => {
+    document.getElementById("touch-editor").style.display = "none";
+});
+document.getElementById("save-editor").addEventListener("click", () => {
+    document.getElementById("touch-editor").style.display = "none";
+    addMessage("system", "Touch layout saved for this scene.");
+});
 
 // ------------------------------
 // Input Processing
@@ -233,29 +318,21 @@ function processInput(input) {
     if (!input) return;
     addMessage("user", input);
 
-    // Handle game naming
     if (!GodotState.gameName) {
         GodotState.gameName = input;
         addMessage("system", `Game named "${GodotState.gameName}".`);
-    }
-    // Handle concept
-    else if (!GodotState.concept) {
+    } else if (!GodotState.concept) {
         GodotState.concept = input;
         addMessage("system", `Concept set: "${GodotState.concept}".`);
-    }
-    // Handle scene creation
-    else if (!GodotState.currentScene) {
+    } else if (!GodotState.currentScene) {
         const sceneName = input;
         GodotState.currentScene = sceneName;
         ProjectManager.execute(`create scene ${sceneName}`);
         addMessage("system", `Scene "${sceneName}" created and selected.`);
         GodotState.nodesInScene[sceneName] = [];
-    }
-    // Other commands
-    else {
+    } else {
         ProjectManager.execute(input);
 
-        // Track nodes added
         const matchAddNode = input.match(/add node (\w+) (\w+) to (\w+)/i);
         if (matchAddNode) {
             const [_, name, type, scene] = matchAddNode;
@@ -264,7 +341,6 @@ function processInput(input) {
             GodotState.nodesInScene[scene].push({ name, type, script: null });
         }
 
-        // Track thumbsticks or buttons
         const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
         if (matchAddUI) {
             const [_, type, name, scene] = matchAddUI;
@@ -272,7 +348,6 @@ function processInput(input) {
             GodotState.nodesInScene[scene].push({ name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js" });
         }
 
-        // Track scripts attached
         const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
         if (matchAttachScript) {
             const [_, scriptName, nodeName, scene] = matchAttachScript;
@@ -287,7 +362,6 @@ function processInput(input) {
     updateSuggestions();
 }
 
-// Determine next prompt
 function getNextPrompt() {
     if (!GodotState.gameName) return "What is the name of your game?";
     if (!GodotState.concept) return `Please describe the concept of "${GodotState.gameName}".`;
@@ -298,7 +372,7 @@ function getNextPrompt() {
 // ------------------------------
 // Event Listener
 // ------------------------------
-chatInput.addEventListener("keydown", function(e) {
+chatInput.addEventListener("keydown", e => {
     if (e.key === "Enter") {
         const input = chatInput.value;
         chatInput.value = "";
