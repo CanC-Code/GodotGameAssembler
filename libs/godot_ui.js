@@ -1,6 +1,6 @@
 // libs/godot_ui.js
 // Author: CCVO
-// Purpose: DOM and UI handling with intent-based suggestions
+// Purpose: DOM and UI handling with controller modal
 
 const chatLog = document.getElementById("nlp-log");
 const chatInput = document.getElementById("nlp-command");
@@ -14,7 +14,7 @@ if (!suggestionContainer) {
 }
 
 // ------------------------------
-// Message display
+// Messages
 // ------------------------------
 function addMessage(sender, message) {
     const msgDiv = document.createElement("div");
@@ -25,28 +25,30 @@ function addMessage(sender, message) {
 }
 
 // ------------------------------
-// Info panel
+// Info Panel
 // ------------------------------
 function updateInfoPanel() {
     infoPanel.innerHTML = "";
 
-    if (GodotState.currentScene) infoPanel.innerHTML += `<strong>Scene:</strong> ${GodotState.currentScene}<br>`;
+    if (GodotState.currentScene) {
+        infoPanel.innerHTML += `<strong>Scene:</strong> ${GodotState.currentScene}<br>`;
+    }
+
     infoPanel.innerHTML += `<strong>Game:</strong> ${GodotState.gameName || "(unnamed)"}<br>`;
     infoPanel.innerHTML += `<strong>Concept:</strong> ${GodotState.concept || "(unset)"}<br>`;
 
-    if (GodotState.nodesInScene?.[GodotState.currentScene]?.length) {
-        infoPanel.innerHTML += `<strong>Nodes:</strong> ${GodotState.nodesInScene[GodotState.currentScene]
-            .map(n => `${n.name} (${n.type})`)
-            .join(", ")}<br>`;
+    // Show connected controllers
+    const controllers = Object.keys(GodotState.controllers || {});
+    if (controllers.length) {
+        infoPanel.innerHTML += `<strong>Controllers:</strong> ${controllers.join(", ")}`;
     }
 }
 
 // ------------------------------
-// Suggestions
+// Suggestion Logic (INTENT-BASED)
 // ------------------------------
 const NodeTypeSuggestions = {
-    singleton: ["Player", "Camera"],
-    multi: ["Button", "Label"],
+    default: ["Add Player", "Add Camera", "Add Button"],
     defaultPostNode: ["Add Another Node", "Create New Scene", "Export Project"]
 };
 
@@ -57,17 +59,7 @@ function updateSuggestions() {
     if (!GodotState.gameName) suggestions = ["Set Game Name"];
     else if (!GodotState.concept) suggestions = ["Set Concept"];
     else if (!GodotState.currentScene) suggestions = ["Create Scene"];
-    else {
-        const existingNodes = GodotState.nodesInScene?.[GodotState.currentScene] || [];
-        const existingTypes = existingNodes.map(n => n.type);
-
-        NodeTypeSuggestions.singleton.forEach(type => {
-            if (!existingTypes.includes(type)) suggestions.push(`Add ${type}`);
-        });
-
-        NodeTypeSuggestions.multi.forEach(type => suggestions.push(`Add ${type}`));
-        suggestions.push(...NodeTypeSuggestions.defaultPostNode);
-    }
+    else suggestions = NodeTypeSuggestions.defaultPostNode;
 
     suggestions.forEach(addSuggestionButton);
 }
@@ -89,7 +81,55 @@ function addSuggestionButton(text) {
 }
 
 // ------------------------------
-// Expose
+// Controller Modal
+// ------------------------------
+let controllerModal = document.getElementById("controller-modal");
+if (!controllerModal) {
+    controllerModal = document.createElement("div");
+    controllerModal.id = "controller-modal";
+    controllerModal.style.display = "none";
+    controllerModal.style.position = "fixed";
+    controllerModal.style.top = "30%";
+    controllerModal.style.left = "30%";
+    controllerModal.style.padding = "20px";
+    controllerModal.style.backgroundColor = "#222";
+    controllerModal.style.border = "2px solid #fff";
+    controllerModal.style.zIndex = 1000;
+    document.body.appendChild(controllerModal);
+}
+
+window.showControllerModal = function(playerName, callback) {
+    controllerModal.innerHTML = `<h3>Assign Controller for "${playerName}"</h3>`;
+    const existingControllers = Object.keys(GodotState.controllers || {});
+    existingControllers.forEach(name => {
+        const btn = document.createElement("button");
+        btn.innerText = name;
+        btn.style.margin = "5px";
+        btn.onclick = () => { controllerModal.style.display = "none"; callback(name); };
+        controllerModal.appendChild(btn);
+    });
+
+    const input = document.createElement("input");
+    input.placeholder = "New controller name";
+    input.style.display = "block";
+    input.style.marginTop = "10px";
+    controllerModal.appendChild(input);
+
+    const okBtn = document.createElement("button");
+    okBtn.innerText = "Assign";
+    okBtn.style.marginTop = "10px";
+    okBtn.onclick = () => {
+        const name = input.value || "DefaultController";
+        controllerModal.style.display = "none";
+        callback(name);
+    };
+    controllerModal.appendChild(okBtn);
+
+    controllerModal.style.display = "block";
+};
+
+// ------------------------------
+// Expose globals
 // ------------------------------
 window.addMessage = addMessage;
 window.updateInfoPanel = updateInfoPanel;
