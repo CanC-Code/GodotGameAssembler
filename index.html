@@ -49,6 +49,7 @@
 
 <!-- CORE -->
 <script src="core/project_graph.js"></script>
+<script src="libs/project_manager_core.js"></script>
 <script src="asset_manager/asset_handler.js"></script>
 <script src="libs/scene_composer.js"></script>
 <script src="export/zip_exporter.js"></script>
@@ -60,7 +61,7 @@
 <script src="libs/godot.js"></script>
 
 <script>
-  // Connect NLP input to ProjectManager
+  // Connect NLP input to ProjectManager (for fallback)
   const nlpInput = document.getElementById("nlp-command");
   const nlpSend = document.getElementById("nlp-send");
   const nlpLog = document.getElementById("nlp-log");
