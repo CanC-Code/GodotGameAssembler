@@ -10,7 +10,8 @@ const GodotState = {
     concept: null,
     currentScene: null,
     lastNodeAdded: null,
-    nodesInScene: {} // { sceneName: [ { name, type, script, touchPosition } ] }
+    nodesInScene: {}, // { sceneName: [ { name, type, script, touchPosition } ] }
+    awaitingInputFor: null
 };
 
 // ------------------------------
@@ -19,16 +20,12 @@ const GodotState = {
 const chatLog = document.getElementById("nlp-log");
 const chatInput = document.getElementById("nlp-command");
 const infoPanel = document.getElementById("file-info");
-
 let suggestionContainer = document.getElementById("suggestions");
 if (!suggestionContainer) {
     suggestionContainer = document.createElement("div");
     suggestionContainer.id = "suggestions";
     chatLog.parentNode.insertBefore(suggestionContainer, chatLog.nextSibling);
 }
-
-const touchEditor = document.getElementById("touch-editor");
-const editorCanvas = document.getElementById("editor-canvas");
 
 // ------------------------------
 // Helper Functions
@@ -112,53 +109,30 @@ function addSuggestionButton(text) {
     const btn = document.createElement("button");
     btn.className = "suggestion-btn";
     btn.innerText = text;
-    btn.onclick = () => handleSuggestionClick(text);
+    btn.onclick = () => processSuggestionAction(text);
     suggestionContainer.appendChild(btn);
 }
 
 // ------------------------------
 // Suggestion Handlers
 // ------------------------------
-function handleSuggestionClick(action) {
-    switch (action) {
-        case "Set Game Name":
-        case "Set Concept":
-        case "Create Scene":
-        case "Add Another Node":
-        case "Attach Script":
-        case "Attach Movement Script":
-        case "Assign Jump Script":
-        case "Assign Interact Script":
-        case "Add Camera":
-        case "Add UI":
-        case "Set Spawn Position":
-        case "Add Android Controls":
-        case "Edit Android Touch Layout":
-        case "Link to Scene":
-        case "Create New Scene":
-        case "Export Project":
-            processSuggestionAction(action);
-            break;
-        default:
-            chatInput.focus();
-            addMessage("system", `Type command for: ${action}`);
-            break;
-    }
-}
-
 function processSuggestionAction(action) {
     chatInput.focus();
     switch (action) {
         case "Set Game Name":
+            GodotState.awaitingInputFor = "gameName";
             addMessage("system", "Please type the name of your game in the input box.");
             break;
         case "Set Concept":
+            GodotState.awaitingInputFor = "concept";
             addMessage("system", "Please describe your game concept in the input box.");
             break;
         case "Create Scene":
+            GodotState.awaitingInputFor = "sceneName";
             addMessage("system", "Type the name of your new scene.");
             break;
         case "Add Another Node":
+            GodotState.awaitingInputFor = "nodeName";
             addMessage("system", "Type: add node <NodeName> <Type> to <SceneName>");
             break;
         case "Attach Script":
@@ -188,11 +162,15 @@ function processSuggestionAction(action) {
             addMessage("system", `Use: link button <ButtonName> to scene <SceneName>`);
             break;
         case "Create New Scene":
+            GodotState.awaitingInputFor = "sceneName";
             addMessage("system", "Type the name of the new scene you want to create.");
             break;
         case "Export Project":
             ProjectManager.execute(`export project ${GodotState.gameName || "MyGame"}`);
             addMessage("system", `Project exported as "${GodotState.gameName || "MyGame"}".`);
+            break;
+        default:
+            addMessage("system", `Type command for: ${action}`);
             break;
     }
 }
@@ -246,54 +224,56 @@ function openTouchEditor() {
         return;
     }
 
-    editorCanvas.innerHTML = "";
+    const editor = document.getElementById("touch-editor");
+    if (!editor) {
+        addMessage("system", "Touch editor not found in DOM.");
+        return;
+    }
+
+    const canvas = document.getElementById("editor-canvas");
+    canvas.innerHTML = "";
+
     const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
     const touchNodes = nodes.filter(n => n.type === "thumbstick" || n.type === "button");
 
     touchNodes.forEach(node => {
         const el = document.createElement("div");
-        el.className = `touch-node ${node.type}`; // <-- Apply CSS class dynamically
+        el.className = "touch-node";
         el.dataset.name = node.name;
+        el.style.position = "absolute";
+        el.style.width = "60px";
+        el.style.height = "60px";
+        el.style.background = node.type === "thumbstick" ? "rgba(0,150,255,0.5)" : "rgba(0,255,100,0.5)";
+        el.style.borderRadius = node.type === "thumbstick" ? "50%" : "10%";
+        el.style.cursor = "grab";
 
         const xPct = node.touchPosition?.x || 0.1;
         const yPct = node.touchPosition?.y || 0.8;
+        el.style.left = `${xPct * canvas.clientWidth}px`;
+        el.style.top = `${yPct * canvas.clientHeight}px`;
 
-        el.style.position = "absolute";
-        el.style.left = `${xPct * editorCanvas.clientWidth}px`;
-        el.style.top = `${yPct * editorCanvas.clientHeight}px`;
-        el.style.width = "60px";
-        el.style.height = "60px";
-        el.style.cursor = "grab";
-
-        editorCanvas.appendChild(el);
-        makeDraggable(el, editorCanvas, node);
+        canvas.appendChild(el);
+        makeDraggable(el, canvas, node);
     });
 
-    touchEditor.style.display = "flex";
+    editor.style.display = "block";
 }
 
-// ------------------------------
-// Draggable logic (mouse + touch)
-// ------------------------------
 function makeDraggable(el, container, node) {
-    let offsetX = 0, offsetY = 0, dragging = false;
+    let offsetX, offsetY, dragging = false;
 
     function pointerDown(e) {
         e.preventDefault();
         dragging = true;
         const rect = el.getBoundingClientRect();
-        offsetX = (e.clientX || e.touches?.[0].clientX) - rect.left;
-        offsetY = (e.clientY || e.touches?.[0].clientY) - rect.top;
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
     }
 
     function pointerMove(e) {
         if (!dragging) return;
-        const clientX = e.clientX || e.touches?.[0].clientX;
-        const clientY = e.clientY || e.touches?.[0].clientY;
-        if (clientX === undefined || clientY === undefined) return;
-
-        let x = clientX - container.getBoundingClientRect().left - offsetX;
-        let y = clientY - container.getBoundingClientRect().top - offsetY;
+        let x = e.clientX - container.getBoundingClientRect().left - offsetX;
+        let y = e.clientY - container.getBoundingClientRect().top - offsetY;
 
         x = Math.max(0, Math.min(container.clientWidth - el.clientWidth, x));
         y = Math.max(0, Math.min(container.clientHeight - el.clientHeight, y));
@@ -313,19 +293,17 @@ function makeDraggable(el, container, node) {
     document.addEventListener("mousemove", pointerMove);
     document.addEventListener("mouseup", pointerUp);
 
-    el.addEventListener("touchstart", pointerDown);
-    document.addEventListener("touchmove", pointerMove);
+    el.addEventListener("touchstart", e => pointerDown(e.touches[0]));
+    document.addEventListener("touchmove", e => pointerMove(e.touches[0]));
     document.addEventListener("touchend", pointerUp);
 }
 
-// ------------------------------
 // Editor Buttons
-// ------------------------------
-document.getElementById("close-editor").addEventListener("click", () => {
-    touchEditor.style.display = "none";
+document.getElementById("close-editor")?.addEventListener("click", () => {
+    document.getElementById("touch-editor").style.display = "none";
 });
-document.getElementById("save-editor").addEventListener("click", () => {
-    touchEditor.style.display = "none";
+document.getElementById("save-editor")?.addEventListener("click", () => {
+    document.getElementById("touch-editor").style.display = "none";
     addMessage("system", "Touch layout saved for this scene.");
 });
 
@@ -337,47 +315,53 @@ function processInput(input) {
     if (!input) return;
     addMessage("user", input);
 
-    if (!GodotState.gameName) {
-        GodotState.gameName = input;
-        addMessage("system", `Game named "${GodotState.gameName}".`);
-    } else if (!GodotState.concept) {
-        GodotState.concept = input;
-        addMessage("system", `Concept set: "${GodotState.concept}".`);
-    } else if (!GodotState.currentScene) {
-        const sceneName = input;
-        GodotState.currentScene = sceneName;
-        ProjectManager.execute(`create scene ${sceneName}`);
-        addMessage("system", `Scene "${sceneName}" created and selected.`);
-        GodotState.nodesInScene[sceneName] = [];
-    } else {
-        ProjectManager.execute(input);
+    switch(GodotState.awaitingInputFor) {
+        case "gameName":
+            GodotState.gameName = input;
+            addMessage("system", `Game named "${GodotState.gameName}".`);
+            GodotState.awaitingInputFor = null;
+            break;
+        case "concept":
+            GodotState.concept = input;
+            addMessage("system", `Concept set: "${GodotState.concept}".`);
+            GodotState.awaitingInputFor = null;
+            break;
+        case "sceneName":
+            GodotState.currentScene = input;
+            ProjectManager.execute(`create scene ${input}`);
+            addMessage("system", `Scene "${input}" created and selected.`);
+            GodotState.nodesInScene[input] = [];
+            GodotState.awaitingInputFor = null;
+            break;
+        case "nodeName":
+            ProjectManager.execute(input);
+            const matchAddNode = input.match(/add node (\w+) (\w+) to (\w+)/i);
+            if (matchAddNode) {
+                const [_, name, type, scene] = matchAddNode;
+                GodotState.lastNodeAdded = name;
+                if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
+                GodotState.nodesInScene[scene].push({ name, type, script: null });
+            }
+            GodotState.awaitingInputFor = null;
+            break;
+        default:
+            ProjectManager.execute(input);
+            // handle other commands normally
+            const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
+            if (matchAddUI) {
+                const [_, type, name, scene] = matchAddUI;
+                if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
+                GodotState.nodesInScene[scene].push({ name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js" });
+            }
 
-        const matchAddNode = input.match(/add node (\w+) (\w+) to (\w+)/i);
-        if (matchAddNode) {
-            const [_, name, type, scene] = matchAddNode;
-            GodotState.lastNodeAdded = name;
-            if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
-            GodotState.nodesInScene[scene].push({ name, type, script: null });
-        }
-
-        const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
-        if (matchAddUI) {
-            const [_, type, name, scene] = matchAddUI;
-            if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
-            GodotState.nodesInScene[scene].push({
-                name,
-                type,
-                script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js"
-            });
-        }
-
-        const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
-        if (matchAttachScript) {
-            const [_, scriptName, nodeName, scene] = matchAttachScript;
-            const nodes = GodotState.nodesInScene[scene] || [];
-            const node = nodes.find(n => n.name === nodeName);
-            if (node) node.script = scriptName;
-        }
+            const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
+            if (matchAttachScript) {
+                const [_, scriptName, nodeName, scene] = matchAttachScript;
+                const nodes = GodotState.nodesInScene[scene] || [];
+                const node = nodes.find(n => n.name === nodeName);
+                if (node) node.script = scriptName;
+            }
+            break;
     }
 
     updateInfoPanel();
