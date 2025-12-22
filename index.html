@@ -47,6 +47,18 @@
 
 </div>
 
+<!-- TOUCH LAYOUT EDITOR POP-UP -->
+<div id="touch-editor" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:1000;">
+    <div id="editor-header" style="position:absolute; top:10px; left:10px; right:10px; height:40px; color:white; font-size:16px;">
+        <span>Touch Layout Editor</span>
+        <button id="close-editor" style="float:right;">Close</button>
+        <button id="save-editor" style="float:right; margin-right:10px;">Save Layout</button>
+    </div>
+    <div id="editor-canvas" style="position:absolute; top:60px; left:0; right:0; bottom:0; background:#222; overflow:hidden;">
+        <!-- Touch elements will be dynamically added here -->
+    </div>
+</div>
+
 <!-- CORE -->
 <script src="core/project_graph.js"></script>
 <script src="libs/project_manager_core.js"></script>
