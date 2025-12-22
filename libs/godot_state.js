@@ -1,36 +1,54 @@
 // libs/godot_state.js
 // Author: CCVO
-// Purpose: Centralized global state for Godot Game Assembler
+// Purpose: Central mutable state for Godot Game Assembler (human-first)
 
-const WorkflowStage = {
-    INIT: "INIT",
-    CONCEPT: "CONCEPT",
-    SCENE: "SCENE",
-    NODE: "NODE",
-    MENU_LAYOUT: "MENU_LAYOUT",
-    BUTTON_SETUP: "BUTTON_SETUP",
-    SCENE_TRANSITION: "SCENE_TRANSITION",
-    DONE: "DONE"
-};
-
-const GodotState = {
-    workflowStage: WorkflowStage.INIT,
-
+window.GodotState = {
+    // Project identity
     gameName: null,
     concept: null,
-    currentScene: null,
 
-    scenes: [],
+    // Scene tracking
+    currentScene: null,
     nodesInScene: {},
 
-    lastNodeAdded: null,
+    // Controller system (NEW)
+    controllers: {},           // id -> controller object
+    activeController: null,    // currently edited / assigned controller
 
-    androidControls: [],
-    uiElements: []
+    // Conversational flow control (NEW)
+    creationContext: null,     // { type, subtype, data, step }
+
+    // UI helpers
+    lastNodeAdded: null
 };
 
-// Expose globally
-window.GodotState = GodotState;
-window.WorkflowStage = WorkflowStage;
+// ------------------------------
+// Controller helpers
+// ------------------------------
+GodotState.createController = function (id, type = "touch") {
+    if (this.controllers[id]) return this.controllers[id];
 
-console.log("godot_state.js loaded");
+    const controller = {
+        id,
+        type,
+        bindings: {},
+        layout: {}
+    };
+
+    this.controllers[id] = controller;
+    this.activeController = id;
+    return controller;
+};
+
+GodotState.getActiveController = function () {
+    if (!this.activeController) return null;
+    return this.controllers[this.activeController];
+};
+
+GodotState.assignControllerToNode = function (scene, nodeName, controllerId) {
+    const nodes = this.nodesInScene[scene] || [];
+    const node = nodes.find(n => n.name === nodeName);
+    if (!node) return;
+
+    node.controller = controllerId;
+};
