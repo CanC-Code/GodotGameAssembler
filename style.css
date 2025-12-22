@@ -1,155 +1,91 @@
-body {
-  margin: 0;
-  height: 100vh;
-  background: #1e1e1e;
-  color: #f0f0f0;
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Godot Game Assembler</title>
+<link rel="stylesheet" href="style.css">
+</head>
 
-header {
-  background: #282c34;
-  padding: 0.75em;
-  text-align: center;
-  font-size: 1.4em;
-  border-bottom: 1px solid #333;
-}
+<body>
 
-#app-root {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+<header>Godot Game Assembler</header>
 
-/* ---------- TOP / BOTTOM SPLIT ---------- */
+<div id="app-root">
 
-#top-area {
-  flex: 0 0 65%;
-  display: flex;
-  padding: 1em;
-  gap: 1em;
-  overflow: hidden;
-}
+  <!-- TOP HALF -->
+  <div id="top-area">
 
-#bottom-area {
-  flex: 0 0 35%;
-  display: flex;
-  flex-direction: column;
-  padding: 0 1em 1em 1em;
-}
+    <!-- TOP LEFT: PROJECT / FILES -->
+    <div id="top-left" class="panel">
+      <div class="panel-title">Project / Files</div>
+      <div id="project-tree">
+        <em>No scenes</em>
+      </div>
+    </div>
 
-/* ---------- TOP LEFT / RIGHT ---------- */
+    <!-- TOP RIGHT: FILE INFO / PREVIEW -->
+    <div id="top-right" class="panel">
+      <div class="panel-title">File Information</div>
+      <div id="file-info">
+        <em>No file selected</em>
+      </div>
+      <div id="file-preview">
+        <em>Preview will appear here</em>
+      </div>
+    </div>
 
-#top-left {
-  width: 300px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-}
+  </div>
 
-#top-right {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
+  <!-- BOTTOM HALF: NLP -->
+  <div id="bottom-area" class="panel">
+    <div class="nlp-input-row">
+      <input id="nlp-command" placeholder="Type a command..." />
+      <button id="nlp-send">Send</button>
+    </div>
+    <div id="nlp-log"></div>
+  </div>
 
-/* ---------- PANELS ---------- */
+</div>
 
-.panel {
-  background: #2b2b2b;
-  border-radius: 8px;
-  padding: 0.75em;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5em;
-}
+<!-- CORE -->
+<script src="core/project_graph.js"></script>
+<script src="libs/project_manager_core.js"></script>
+<script src="asset_manager/asset_handler.js"></script>
+<script src="libs/scene_composer.js"></script>
+<script src="export/zip_exporter.js"></script>
 
-.panel-title {
-  font-weight: bold;
-  border-bottom: 1px solid #444;
-  padding-bottom: 0.25em;
-}
+<!-- LOGIC -->
+<script src="libs/jszip.min.js"></script>
+<script src="libs/nlp_pro.js"></script>
+<script src="libs/project_manager.js"></script>
+<script src="libs/godot.js"></script>
 
-/* ---------- PROJECT TREE ---------- */
+<script>
+  // Connect NLP input to ProjectManager (for fallback)
+  const nlpInput = document.getElementById("nlp-command");
+  const nlpSend = document.getElementById("nlp-send");
+  const nlpLog = document.getElementById("nlp-log");
 
-#project-tree {
-  font-family: monospace;
-  font-size: 0.9em;
-  overflow-y: auto;
-  flex: 1;
-}
+  async function sendNLPCommandGUI() {
+    const cmd = nlpInput.value.trim();
+    if (!cmd) return;
+    nlpLog.innerHTML += `> ${cmd}\n`;
+    nlpInput.value = "";
 
-.tree-item {
-  padding: 4px;
-  cursor: pointer;
-}
+    if (window.ProjectManager) {
+      const result = await ProjectManager.process_nlp_command(cmd);
+      nlpLog.innerHTML += `${result}\n`;
+      nlpLog.scrollTop = nlpLog.scrollHeight;
+    } else {
+      nlpLog.innerHTML += "ProjectManager not loaded.\n";
+    }
+  }
 
-.tree-item:hover {
-  background: #3a3a3a;
-}
+  nlpSend.addEventListener("click", sendNLPCommandGUI);
+  nlpInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendNLPCommandGUI();
+  });
+</script>
 
-.tree-item.selected {
-  background: #4a90e2;
-}
-
-/* ---------- FILE INFO / PREVIEW ---------- */
-
-#file-info {
-  min-height: 80px;
-  border-bottom: 1px solid #444;
-  font-family: monospace;
-  font-size: 0.9em;
-  padding: 0.25em;
-}
-
-#file-preview {
-  flex: 1;
-  overflow: auto;
-  font-family: monospace;
-  font-size: 0.9em;
-  background: #1a1a1a;
-  border-radius: 4px;
-  padding: 0.5em;
-}
-
-/* ---------- NLP ---------- */
-
-#nlp-log {
-  flex: 1;
-  background: #1b1b1b;
-  padding: 0.5em;
-  border-radius: 4px;
-  overflow-y: auto;
-  font-family: monospace;
-  font-size: 0.9em;
-}
-
-.nlp-input-row {
-  display: flex;
-  gap: 0.5em;
-  margin-bottom: 0.5em;
-}
-
-input {
-  flex: 1;
-  padding: 0.5em;
-  border-radius: 4px;
-  border: none;
-  background: #3a3a3a;
-  color: #f0f0f0;
-}
-
-button {
-  padding: 0.5em 1em;
-  border: none;
-  border-radius: 4px;
-  background: #4a90e2;
-  color: white;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #357ab8;
-}
+</body>
+</html>
