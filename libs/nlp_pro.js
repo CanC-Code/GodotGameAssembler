@@ -1,10 +1,7 @@
-// nlp_pro.js
+// libs/nlp_pro.js
 // Author: CCVO
-// Purpose: Context-aware NLP interface for GodotGameAssembler
+// Purpose: Context-aware NLP workflow controller
 
-// ------------------------------
-// NLP Command Processor
-// ------------------------------
 class NLPProcessor {
     constructor(state, chatInput, addMessageCallback) {
         this.state = state;
@@ -18,7 +15,6 @@ class NLPProcessor {
 
         this.addMessage("user", input);
 
-        // Stage-aware interpretation
         switch (this.state.workflowStage) {
             case "INIT":
                 this.state.gameName = input;
@@ -33,52 +29,37 @@ class NLPProcessor {
                 break;
 
             case "SCENE":
-                // Allow free-form: "create scene Level1" or just "Level1"
-                const sceneMatch = input.match(/(?:create\s+scene\s+)?(\w+)/i);
-                if (sceneMatch) {
-                    const sceneName = sceneMatch[1];
-                    this.state.currentScene = sceneName;
-                    ProjectManager.execute(`create scene ${sceneName}`);
-                    this.state.nodesInScene[sceneName] = [];
-                    this.state.workflowStage = "NODE";
-                    this.addMessage("system", `Scene "${sceneName}" created and selected.`);
-                } else {
-                    this.addMessage("system", "Could not identify scene name. Try again.");
-                }
+                this.createScene(input);
                 break;
 
             case "NODE":
                 this.handleNodeInput(input);
                 break;
 
-            case "MENU_LAYOUT":
-                this.handleMenuInput(input);
-                break;
-
-            case "BUTTON_SETUP":
-                this.handleButtonInput(input);
-                break;
-
-            case "SCENE_TRANSITION":
-                this.handleSceneTransitionInput(input);
-                break;
-
-            case "DONE":
-                this.addMessage("system", "Project is complete. You can export it now.");
-                break;
-
             default:
-                this.addMessage("system", "Unrecognized stage. Type 'help' for commands.");
+                this.addMessage("system", "Workflow state not recognized.");
         }
     }
 
-    // ------------------------------
-    // Node creation / scripts
-    // ------------------------------
-    handleNodeInput(input) {
-        // Free-form: "add player", "add camera", etc.
-        const lower = input.toLowerCase();
+    createScene(input) {
+        const match = input.match(/(?:create\s+scene\s+)?(\w+)/i);
+        if (!match) {
+            this.addMessage("system", "Please provide a scene name.");
+            return;
+        }
 
+        const sceneName = match[1];
+        this.state.currentScene = sceneName;
+        this.state.nodesInScene[sceneName] = [];
+
+        executeProjectCommand(`create scene ${sceneName}`);
+
+        this.state.workflowStage = "NODE";
+        this.addMessage("system", `Scene "${sceneName}" created and selected.`);
+    }
+
+    handleNodeInput(input) {
+        const lower = input.toLowerCase();
         let nodeName = null;
         let nodeType = null;
 
@@ -91,53 +72,31 @@ class NLPProcessor {
         } else if (lower.includes("button")) {
             nodeName = "Button1";
             nodeType = "Button";
-        } else if (lower.includes("label")) {
-            nodeName = "Label1";
-            nodeType = "Label";
-        } else if (lower.includes("light")) {
-            nodeName = "Light1";
-            nodeType = "Light";
         }
 
         if (nodeName && nodeType) {
-            this.state.lastNodeAdded = nodeName;
-            if (!this.state.nodesInScene[this.state.currentScene]) this.state.nodesInScene[this.state.currentScene] = [];
-            this.state.nodesInScene[this.state.currentScene].push({ name: nodeName, type: nodeType, script: null });
-            ProjectManager.execute(`add node ${nodeName} ${nodeType} to ${this.state.currentScene}`);
-            this.addMessage("system", `Node "${nodeName}" of type "${nodeType}" added to scene "${this.state.currentScene}".`);
-        } else if (lower.includes("add thumbstick") || lower.includes("add jump button") || lower.includes("add interact button")) {
-            // Android controls
-            ProjectManager.execute(input);
-            this.addMessage("system", `Control added: ${input}`);
+            if (!this.state.nodesInScene[this.state.currentScene]) {
+                this.state.nodesInScene[this.state.currentScene] = [];
+            }
+
+            this.state.nodesInScene[this.state.currentScene].push({
+                name: nodeName,
+                type: nodeType,
+                script: null
+            });
+
+            executeProjectCommand(
+                `add node ${nodeName} ${nodeType} to ${this.state.currentScene}`
+            );
+
+            this.addMessage(
+                "system",
+                `Node "${nodeName}" (${nodeType}) added to "${this.state.currentScene}".`
+            );
         } else {
-            this.addMessage("system", `Unrecognized node command: "${input}". Try "add player" or "add camera".`);
+            executeProjectCommand(input);
+            this.addMessage("system", `Executed: "${input}"`);
         }
-    }
-
-    // ------------------------------
-    // Menu / layout handler
-    // ------------------------------
-    handleMenuInput(input) {
-        // e.g., "add main menu", "add start button"
-        ProjectManager.execute(input);
-        this.addMessage("system", `Menu/layout action executed: "${input}".`);
-    }
-
-    // ------------------------------
-    // Button handler
-    // ------------------------------
-    handleButtonInput(input) {
-        // e.g., "link button StartButton to scene Level2"
-        ProjectManager.execute(input);
-        this.addMessage("system", `Button action executed: "${input}".`);
-    }
-
-    // ------------------------------
-    // Scene transition handler
-    // ------------------------------
-    handleSceneTransitionInput(input) {
-        ProjectManager.execute(input);
-        this.addMessage("system", `Scene transition action executed: "${input}".`);
     }
 }
 
@@ -146,17 +105,17 @@ class NLPProcessor {
 // ------------------------------
 window.NLPProcessor = NLPProcessor;
 
-// Usage in godot.js context:
 const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
 
-// Hook to chat input
+// SINGLE authoritative Enter handler
 chatInput.addEventListener("keydown", e => {
     if (e.key === "Enter") {
-        nlpProcessor.process(chatInput.value);
+        const value = chatInput.value;
         chatInput.value = "";
+        nlpProcessor.process(value);
         updateInfoPanel();
         updateSuggestions();
     }
 });
 
-console.log("nlp_pro.js loaded: context-aware NLP processor active.");
+console.log("nlp_pro.js loaded: NLP workflow active.");
