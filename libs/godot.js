@@ -1,6 +1,6 @@
 // godot.js
 // Author: CCVO
-// Purpose: Dynamic context-aware guidance with clickable suggestions for GodotGameAssembler
+// Purpose: Dynamic context-aware guidance with Android touch UI integration
 
 // ------------------------------
 // Global State
@@ -31,8 +31,6 @@ if (!suggestionContainer) {
 // ------------------------------
 // Helper Functions
 // ------------------------------
-
-// Append messages to chat
 function addMessage(sender, message) {
     const msgDiv = document.createElement("div");
     msgDiv.className = sender;
@@ -41,7 +39,6 @@ function addMessage(sender, message) {
     chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-// Update top-right info panel
 function updateInfoPanel() {
     infoPanel.innerHTML = "";
     if (GodotState.currentScene) {
@@ -71,56 +68,44 @@ function updateInfoPanel() {
 }
 
 // ------------------------------
-// Node Type Suggestions Table
+// Node Type & Post-Node Suggestions
 // ------------------------------
 const NodeTypeSuggestions = {
     default: ["KinematicBody", "RigidBody", "Camera", "MeshInstance", "Button", "Label", "Thumbstick", "Light"],
-    Player: ["Attach Movement Script", "Add Camera", "Add UI", "Set Spawn Position"],
+    Player: ["Attach Movement Script", "Add Camera", "Add UI", "Set Spawn Position", "Add Android Controls"],
     Camera: ["Set Transform", "Link to Player"],
     Button: ["Link to Scene", "Attach Script"],
     defaultPostNode: ["Add Another Node", "Attach Script", "Create New Scene", "Export Project"]
 };
 
-// ------------------------------
-// Suggestions Logic
-// ------------------------------
-function updateSuggestions() {
-    suggestionContainer.innerHTML = "";
-    let suggestions = [];
-
-    // Project initial setup
-    if (!GodotState.gameName) {
-        suggestions = ["Set Game Name"];
-    } else if (!GodotState.concept) {
-        suggestions = ["Set Concept"];
-    } else if (!GodotState.currentScene) {
-        suggestions = ["Create Scene"];
-    } else {
-        // Scene exists, dynamic node/script suggestions
-        if (!GodotState.lastNodeAdded) {
-            suggestions = NodeTypeSuggestions.default;
-        } else {
-            const lastNodeType = getLastNodeType(GodotState.lastNodeAdded);
-            if (NodeTypeSuggestions[lastNodeType]) {
-                suggestions = NodeTypeSuggestions[lastNodeType];
-            } else {
-                suggestions = NodeTypeSuggestions.defaultPostNode;
-            }
-        }
-    }
-
-    // Add buttons
-    suggestions.forEach(text => addSuggestionButton(text));
-}
-
-// Helper to get last node type
 function getLastNodeType(nodeName) {
     const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
     const node = nodes.find(n => n.name === nodeName);
     return node ? node.type : null;
 }
 
-// Add a clickable suggestion button
+// ------------------------------
+// Suggestions UI
+// ------------------------------
+function updateSuggestions() {
+    suggestionContainer.innerHTML = "";
+    let suggestions = [];
+
+    if (!GodotState.gameName) suggestions = ["Set Game Name"];
+    else if (!GodotState.concept) suggestions = ["Set Concept"];
+    else if (!GodotState.currentScene) suggestions = ["Create Scene"];
+    else {
+        if (!GodotState.lastNodeAdded) suggestions = NodeTypeSuggestions.default;
+        else {
+            const lastNodeType = getLastNodeType(GodotState.lastNodeAdded);
+            if (NodeTypeSuggestions[lastNodeType]) suggestions = NodeTypeSuggestions[lastNodeType];
+            else suggestions = NodeTypeSuggestions.defaultPostNode;
+        }
+    }
+
+    suggestions.forEach(text => addSuggestionButton(text));
+}
+
 function addSuggestionButton(text) {
     const btn = document.createElement("button");
     btn.className = "suggestion-btn";
@@ -129,9 +114,10 @@ function addSuggestionButton(text) {
     suggestionContainer.appendChild(btn);
 }
 
-// Handle suggestion button clicks
+// ------------------------------
+// Suggestion Handlers
+// ------------------------------
 function handleSuggestionClick(action) {
-    // Mapping button text to commands or prompts
     switch (action) {
         case "Set Game Name":
             chatInput.focus();
@@ -151,27 +137,26 @@ function handleSuggestionClick(action) {
             break;
         case "Attach Script":
         case "Attach Movement Script":
-            if (!GodotState.lastNodeAdded) {
-                addMessage("system", "No node selected for script. Add a node first.");
-                break;
-            }
-            chatInput.value = `attach script ${GodotState.lastNodeAdded.toLowerCase()}_script.js to ${GodotState.lastNodeAdded} in ${GodotState.currentScene}`;
-            chatInput.focus();
-            addMessage("system", `Auto-filled script command. Press Enter to execute.`);
+        case "Assign Jump Script":
+        case "Assign Interact Script":
+            attachScriptToLastNode(action);
             break;
         case "Add Camera":
             chatInput.value = `add node MainCamera Camera to ${GodotState.currentScene}`;
             chatInput.focus();
-            addMessage("system", `Auto-filled camera addition. Press Enter to execute.`);
+            addMessage("system", "Auto-filled camera addition. Press Enter to execute.");
             break;
         case "Add UI":
             chatInput.value = `add node StartButton Button to ${GodotState.currentScene}`;
             chatInput.focus();
-            addMessage("system", `Auto-filled UI node addition. Press Enter to execute.`);
+            addMessage("system", "Auto-filled UI node addition. Press Enter to execute.");
             break;
         case "Set Spawn Position":
             chatInput.focus();
-            addMessage("system", `Use: set position <x> <y> <z> for ${GodotState.lastNodeAdded}`);
+            addMessage("system", `Use: set position 0 1 0 for ${GodotState.lastNodeAdded}`);
+            break;
+        case "Add Android Controls":
+            suggestAndroidControls();
             break;
         case "Link to Scene":
             chatInput.focus();
@@ -192,13 +177,60 @@ function handleSuggestionClick(action) {
     }
 }
 
+// Helper: attach scripts to last node
+function attachScriptToLastNode(action) {
+    if (!GodotState.lastNodeAdded) {
+        addMessage("system", "No node selected for script. Add a node first.");
+        return;
+    }
+    let scriptName = "";
+    switch (action) {
+        case "Attach Movement Script": scriptName = "player_movement.js"; break;
+        case "Assign Jump Script": scriptName = "player_jump.js"; break;
+        case "Assign Interact Script": scriptName = "player_interact.js"; break;
+        default: scriptName = `${GodotState.lastNodeAdded.toLowerCase()}_script.js`; break;
+    }
+    chatInput.value = `attach script ${scriptName} to ${GodotState.lastNodeAdded} in ${GodotState.currentScene}`;
+    chatInput.focus();
+    addMessage("system", `Auto-filled script command. Press Enter to execute.`);
+}
+
+// ------------------------------
+// Android Touch Controls
+// ------------------------------
+function suggestAndroidControls() {
+    if (!GodotState.currentScene) return;
+
+    const thumbstickName = "MoveThumbstick";
+    const jumpButtonName = "JumpButton";
+    const interactButtonName = "InteractButton";
+
+    // Add thumbstick
+    chatInput.value = `add thumbstick ${thumbstickName} to ${GodotState.currentScene}`;
+    chatInput.focus();
+    addMessage("system", `Auto-filled: Add movement thumbstick at default position. Press Enter.`);
+
+    // Add jump button
+    setTimeout(() => {
+        chatInput.value = `add button ${jumpButtonName} to ${GodotState.currentScene}`;
+        chatInput.focus();
+        addMessage("system", `Auto-filled: Add jump button at default position. Press Enter.`);
+    }, 500);
+
+    // Add interact button
+    setTimeout(() => {
+        chatInput.value = `add button ${interactButtonName} to ${GodotState.currentScene}`;
+        chatInput.focus();
+        addMessage("system", `Auto-filled: Add interact button at default position. Press Enter.`);
+    }, 1000);
+}
+
 // ------------------------------
 // Input Processing
 // ------------------------------
 function processInput(input) {
     input = input.trim();
     if (!input) return;
-
     addMessage("user", input);
 
     // Handle game naming
@@ -219,7 +251,7 @@ function processInput(input) {
         addMessage("system", `Scene "${sceneName}" created and selected.`);
         GodotState.nodesInScene[sceneName] = [];
     }
-    // Handle other commands
+    // Other commands
     else {
         ProjectManager.execute(input);
 
@@ -230,6 +262,14 @@ function processInput(input) {
             GodotState.lastNodeAdded = name;
             if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
             GodotState.nodesInScene[scene].push({ name, type, script: null });
+        }
+
+        // Track thumbsticks or buttons
+        const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
+        if (matchAddUI) {
+            const [_, type, name, scene] = matchAddUI;
+            if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
+            GodotState.nodesInScene[scene].push({ name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js" });
         }
 
         // Track scripts attached
@@ -247,12 +287,12 @@ function processInput(input) {
     updateSuggestions();
 }
 
-// Determine next proactive prompt
+// Determine next prompt
 function getNextPrompt() {
     if (!GodotState.gameName) return "What is the name of your game?";
     if (!GodotState.concept) return `Please describe the concept of "${GodotState.gameName}".`;
     if (!GodotState.currentScene) return "Let's create your first scene. What should it be called?";
-    return `Next, add nodes, attach scripts, or create a new scene in "${GodotState.currentScene}".`;
+    return `Next, add nodes, attach scripts, add Android touch controls, or create a new scene in "${GodotState.currentScene}".`;
 }
 
 // ------------------------------
