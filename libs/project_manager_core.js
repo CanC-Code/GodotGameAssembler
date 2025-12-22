@@ -3,7 +3,7 @@
 // Purpose: Core ProjectManager definition for GodotGameAssembler
 // Provides central project graph, NLP command interface, and basic game metadata
 
-(function() {
+(function () {
 
     if (window.ProjectManager) {
         console.warn("ProjectManager already defined. Skipping core initialization.");
@@ -24,13 +24,28 @@
             this.thumbsticks = {};
         }
 
-        // ------------------------------
+        // --------------------------------------------------
+        // 🔑 CANONICAL EXECUTION ENTRY POINT
+        // --------------------------------------------------
+        async execute(command) {
+            if (typeof command !== "string") {
+                console.error("ProjectManager.execute: invalid command", command);
+                return;
+            }
+
+            console.log("PM.execute →", command);
+            return await this.process_nlp_command(command);
+        }
+
+        // --------------------------------------------------
         // NLP Command Processing
-        // ------------------------------
+        // --------------------------------------------------
         async process_nlp_command(cmd) {
             const text = cmd.trim();
 
-            // Basic commands
+            if (!text) return "";
+
+            // Help
             if (/^help$/i.test(text)) {
                 return `Help Commands:
 - name game "<Name>"
@@ -45,36 +60,44 @@
 - export project <Name>`;
             }
 
+            // Name game
             if (/^name\s+game\s+"?([^"]+)"?/i.test(text)) {
                 const name = text.match(/^name\s+game\s+"?([^"]+)"?/i)[1];
                 this.projectName = name;
-                return `Game named '${name}'`;
+                return `Game named "${name}".`;
             }
 
+            // Set concept
             if (/^set\s+concept\s+"?([^"]+)"?/i.test(text)) {
                 const concept = text.match(/^set\s+concept\s+"?([^"]+)"?/i)[1];
                 this.projectConcept = concept;
-                return `Concept set: "${concept}"`;
+                return `Concept set: "${concept}".`;
             }
 
+            // Create scene
             if (/^create\s+scene\s+(\w+)/i.test(text)) {
                 const sceneName = text.match(/^create\s+scene\s+(\w+)/i)[1];
                 const added = this.graph.addScene(sceneName);
-                return added ? `Scene '${sceneName}' created.` : `Scene '${sceneName}' already exists.`;
+                return added
+                    ? `Scene "${sceneName}" created.`
+                    : `Scene "${sceneName}" already exists.`;
             }
 
+            // List scenes
             if (/^list\s+scenes$/i.test(text)) {
                 const scenes = this.graph.getScenes();
-                return scenes.length ? scenes.join(", ") : "No scenes created yet.";
+                return scenes.length
+                    ? scenes.join(", ")
+                    : "No scenes created yet.";
             }
 
-            // Fallback: unknown command
-            return `Unrecognized command. Type 'help' for available commands.`;
+            // Unknown
+            return `Unrecognized command. Type "help" for available commands.`;
         }
 
-        // ------------------------------
-        // Scene Utilities
-        // ------------------------------
+        // --------------------------------------------------
+        // Scene Utilities (used by UI)
+        // --------------------------------------------------
         getScenes() {
             return this.graph.getScenes();
         }
@@ -92,8 +115,24 @@
         }
     }
 
-    // Expose globally
+    // --------------------------------------------------
+    // Global exposure
+    // --------------------------------------------------
     window.ProjectManager = new ProjectManagerClass();
+
+    // 🔗 Universal adapter (NLP + UI + buttons)
+    window.executeProjectCommand = function (command) {
+        if (!window.ProjectManager || typeof window.ProjectManager.execute !== "function") {
+            console.error(
+                "No executable command method found on ProjectManager,",
+                window.ProjectManager
+            );
+            return;
+        }
+
+        window.ProjectManager.execute(command);
+    };
+
     console.log("ProjectManager core initialized.");
 
 })();
