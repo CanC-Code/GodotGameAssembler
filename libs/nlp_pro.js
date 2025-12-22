@@ -1,6 +1,6 @@
 // libs/nlp_pro.js
 // Author: CCVO
-// Purpose: Intent-aware NLP controller with dynamic object questions
+// Purpose: Intent-aware NLP controller (human-first)
 
 class NLPProcessor {
     constructor(state, chatInput, addMessage) {
@@ -11,21 +11,17 @@ class NLPProcessor {
         this.state.workflowStage ??= "INIT";
         this.state.awaitingAnswerFor ??= null;
         this.state.tempNode ??= null;
-        this.state.controllers ??= {}; // Store controller configurations
     }
 
     // ------------------------------
-    // Handle button intents
+    // Button intent handler
     // ------------------------------
     handleIntent(intent) {
         const prompts = {
             "Set Game Name": ["GAME_NAME", "What is the name of your game?"],
             "Set Concept": ["CONCEPT", "Describe the game concept."],
             "Create Scene": ["SCENE_NAME", "What should the scene be called?"],
-            "Add Player": ["PLAYER_NAME", "Player name?"],
-            "Add Camera": ["CAMERA_NAME", "Camera name?"],
-            "Add Button": ["BUTTON_NAME", "Button name?"],
-            "Add Label": ["LABEL_NAME", "Label text?"]
+            "Add Player": ["PLAYER_NAME", "Enter player name:"]
         };
 
         if (!prompts[intent]) return;
@@ -36,7 +32,7 @@ class NLPProcessor {
     }
 
     // ------------------------------
-    // Process text input
+    // Main text processor
     // ------------------------------
     async process(input) {
         input = input.trim();
@@ -44,7 +40,7 @@ class NLPProcessor {
 
         this.addMessage("user", input);
 
-        // 1️⃣ Explicit answer to a pending question
+        // 1️⃣ Explicit answer to a question
         if (this.state.awaitingAnswerFor) {
             await this.consumeAnswer(input);
             return;
@@ -58,7 +54,7 @@ class NLPProcessor {
             return;
         }
 
-        // 3️⃣ Implicit intent / free-form
+        // 3️⃣ Implicit intent
         await this.inferImplicitIntent(input);
     }
 
@@ -85,64 +81,29 @@ class NLPProcessor {
 
             case "PLAYER_NAME":
                 this.state.tempNode = { type: "Player", name: text };
-                const existingControllers = Object.keys(this.state.controllers);
-                const prompt = existingControllers.length
-                    ? `Assign a controller? (type name or choose: ${existingControllers.join(", ")})`
-                    : `Assign a controller for "${text}"? (type new name)`;
-                this.addMessage("system", prompt);
-                this.state.awaitingAnswerFor = "PLAYER_CONTROLLER";
-                return; // Wait for next input
+                window.showControllerModal(text, async (controllerName) => {
+                    this.state.tempNode.controller = controllerName;
+                    GodotState.controllers ??= {};
+                    GodotState.controllers[controllerName] ??= { mapping: {} };
 
-            case "PLAYER_CONTROLLER":
-                const controllerName = text || "DefaultController";
-                this.state.tempNode.controller = controllerName;
-                // Store controller for reuse
-                this.state.controllers[controllerName] ??= { mapping: {} };
+                    await ProjectManager.execute(
+                        `add node ${this.state.tempNode.name} Player to ${this.state.currentScene}`
+                    );
 
-                // Execute creation
-                await ProjectManager.execute(
-                    `add node ${this.state.tempNode.name} Player to ${this.state.currentScene}`
-                );
+                    this.state.nodesInScene ??= {};
+                    this.state.nodesInScene[this.state.currentScene] ??= [];
+                    this.state.nodesInScene[this.state.currentScene].push(this.state.tempNode);
 
-                this.state.nodesInScene ??= {};
-                this.state.nodesInScene[this.state.currentScene] ??= [];
-                this.state.nodesInScene[this.state.currentScene].push(this.state.tempNode);
+                    this.addMessage(
+                        "system",
+                        `Player "${this.state.tempNode.name}" added with controller "${controllerName}".`
+                    );
 
-                this.addMessage(
-                    "system",
-                    `Player "${this.state.tempNode.name}" added with controller "${controllerName}".`
-                );
-
-                this.state.tempNode = null;
-                break;
-
-            case "CAMERA_NAME":
-            case "BUTTON_NAME":
-            case "LABEL_NAME":
-                const typeMap = {
-                    CAMERA_NAME: "Camera",
-                    BUTTON_NAME: "Button",
-                    LABEL_NAME: "Label"
-                };
-                const nodeType = typeMap[this.state.awaitingAnswerFor];
-                const nodeName = text;
-
-                await ProjectManager.execute(
-                    `add node ${nodeName} ${nodeType} to ${this.state.currentScene}`
-                );
-
-                this.state.nodesInScene ??= {};
-                this.state.nodesInScene[this.state.currentScene] ??= [];
-                this.state.nodesInScene[this.state.currentScene].push({ type: nodeType, name: nodeName });
-
-                this.addMessage(
-                    "system",
-                    `${nodeType} "${nodeName}" added to scene "${this.state.currentScene}".`
-                );
-                break;
-
-            default:
-                console.warn("Unhandled awaitingAnswerFor:", this.state.awaitingAnswerFor);
+                    this.state.tempNode = null;
+                    this.state.awaitingAnswerFor = null;
+                    this.refresh();
+                });
+                return;
         }
 
         this.state.awaitingAnswerFor = null;
@@ -150,7 +111,7 @@ class NLPProcessor {
     }
 
     // ------------------------------
-    // Implicit free-form processing
+    // Implicit intent inference
     // ------------------------------
     async inferImplicitIntent(text) {
         const lower = text.toLowerCase();
@@ -158,16 +119,42 @@ class NLPProcessor {
         if (!this.state.gameName) {
             this.state.gameName = text;
             this.addMessage("system", `Game named "${text}".`);
-        } else if (!this.state.concept) {
+        }
+        else if (!this.state.concept) {
             this.state.concept = text;
             this.addMessage("system", `Concept set: "${text}".`);
-        } else if (!this.state.currentScene) {
+        }
+        else if (!this.state.currentScene) {
             this.state.currentScene = text;
             await ProjectManager.execute(`create scene ${text}`);
             this.addMessage("system", `Scene "${text}" created.`);
-        } else if (["player", "camera", "button", "label"].includes(lower)) {
-            await this.handleIntent("Add " + lower.charAt(0).toUpperCase() + lower.slice(1));
-        } else {
+        }
+        else if (["player", "camera", "button", "label"].includes(lower)) {
+            // Player node triggers name + controller assignment
+            if (lower === "player") {
+                this.handleIntent("Add Player");
+                return;
+            }
+
+            const typeMap = {
+                camera: "Camera",
+                button: "Button",
+                label: "Label"
+            };
+
+            const nodeName = lower.charAt(0).toUpperCase() + lower.slice(1);
+            const nodeType = typeMap[lower];
+
+            await ProjectManager.execute(
+                `add node ${nodeName} ${nodeType} to ${this.state.currentScene}`
+            );
+
+            this.addMessage(
+                "system",
+                `Node "${nodeName}" added to scene "${this.state.currentScene}".`
+            );
+        }
+        else {
             this.addMessage(
                 "system",
                 `I didn’t understand "${text}". Try "add player" or use the buttons.`
@@ -204,4 +191,4 @@ chatInput.addEventListener("keydown", e => {
     }
 });
 
-console.log("NLP active: async, intent-aware, dynamic questions enabled.");
+console.log("NLP active: async-safe, intent-aware, controller integrated.");
