@@ -5,7 +5,7 @@
 
 class ProjectGraph {
     constructor() {
-        this.scenes = {}; // SceneName -> { nodes: { NodeName -> {type,parent,children,scripts} } }
+        this.scenes = {}; // SceneName -> { nodes: { NodeName -> {type,parent,children,scripts,touchPosition} } }
         this.assets = {}; // AssetPath -> {name, type, extension, folder, data}
         this.folders = {}; // FolderPath -> { name, parent, files: [], subfolders: [] }
     }
@@ -34,7 +34,7 @@ class ProjectGraph {
     // -----------------------------
     // Node Management
     // -----------------------------
-    addNode(sceneName, nodeName, nodeType = "Node2D", parentName = null) {
+    addNode(sceneName, nodeName, nodeType = "Node2D", parentName = null, touchPosition = null) {
         const scene = this.scenes[sceneName];
         if (!scene) return false;
         if (scene.nodes[nodeName]) return false;
@@ -43,7 +43,8 @@ class ProjectGraph {
             type: nodeType,
             parent: parentName || null,
             children: [],
-            scripts: []
+            scripts: [],
+            touchPosition: touchPosition || null
         };
 
         if (parentName && scene.nodes[parentName]) {
@@ -63,6 +64,13 @@ class ProjectGraph {
         const node = this.getNode(sceneName, nodeName);
         if (!node) return false;
         if (!node.scripts.includes(scriptName)) node.scripts.push(scriptName);
+        return true;
+    }
+
+    setNodeTouchPosition(sceneName, nodeName, touchPosition) {
+        const node = this.getNode(sceneName, nodeName);
+        if (!node) return false;
+        node.touchPosition = touchPosition;
         return true;
     }
 
@@ -119,6 +127,7 @@ class ProjectGraph {
             output += `- ${nodeName} (Type: ${node.type}`;
             if (node.parent) output += `, Parent: ${node.parent}`;
             if (node.scripts.length) output += `, Scripts: ${node.scripts.join(", ")}`;
+            if (node.touchPosition) output += `, Touch: { x: ${node.touchPosition.x.toFixed(2)}, y: ${node.touchPosition.y.toFixed(2)} }`;
             output += `)\n`;
         }
         return output;
@@ -128,4 +137,4 @@ class ProjectGraph {
 // Expose globally
 window.ProjectGraph = ProjectGraph;
 
-console.log("ProjectGraph loaded.");
+console.log("ProjectGraph loaded with touch support.");
