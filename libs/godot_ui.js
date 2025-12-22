@@ -25,72 +25,20 @@ function updateInfoPanel() {
     infoPanel.innerHTML = "";
 
     if (GodotState.currentScene) {
-        const sceneHeader = document.createElement("h3");
-        sceneHeader.innerText = `Scene: ${GodotState.currentScene}`;
-        infoPanel.appendChild(sceneHeader);
-
-        const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
-        if (nodes.length > 0) {
-            const nodeList = document.createElement("ul");
-            nodes.forEach(node => {
-                const nodeItem = document.createElement("li");
-                nodeItem.innerText =
-                    `${node.name} (${node.type})` +
-                    (node.script ? ` → Script: ${node.script}` : "");
-                nodeList.appendChild(nodeItem);
-            });
-            infoPanel.appendChild(nodeList);
-        } else {
-            infoPanel.appendChild(
-                document.createTextNode("No nodes in this scene yet.")
-            );
-        }
-    } else {
-        infoPanel.appendChild(
-            document.createTextNode("No scene selected.")
-        );
+        infoPanel.innerHTML += `<strong>Scene:</strong> ${GodotState.currentScene}<br>`;
     }
 
-    const projectInfo = document.createElement("p");
-    projectInfo.innerText =
-        `Game: ${GodotState.gameName || "(unnamed)"}\n` +
-        `Concept: ${GodotState.concept || "(unset)"}`;
-    infoPanel.appendChild(projectInfo);
+    infoPanel.innerHTML += `<strong>Game:</strong> ${GodotState.gameName || "(unnamed)"}<br>`;
+    infoPanel.innerHTML += `<strong>Concept:</strong> ${GodotState.concept || "(unset)"}`;
 }
 
-// --------------------------------------------------
-// Suggestions
-// --------------------------------------------------
+// ------------------------------
+// Suggestion Logic (INTENT-BASED)
+// ------------------------------
 
 const NodeTypeSuggestions = {
-    default: [
-        "KinematicBody",
-        "RigidBody",
-        "Camera",
-        "MeshInstance",
-        "Button",
-        "Label",
-        "Thumbstick",
-        "Light"
-    ],
-    Player: [
-        "Attach Movement Script",
-        "Assign Jump Script",
-        "Assign Interact Script",
-        "Add Camera",
-        "Add UI",
-        "Set Spawn Position",
-        "Add Android Controls",
-        "Edit Android Touch Layout"
-    ],
-    Camera: ["Set Transform", "Link to Player"],
-    Button: ["Link to Scene", "Attach Script"],
-    defaultPostNode: [
-        "Add Another Node",
-        "Attach Script",
-        "Create New Scene",
-        "Export Project"
-    ]
+    default: ["Add Player", "Add Camera", "Add Button"],
+    defaultPostNode: ["Add Another Node", "Create New Scene", "Export Project"]
 };
 
 function updateSuggestions() {
@@ -104,16 +52,7 @@ function updateSuggestions() {
     } else if (!GodotState.currentScene) {
         suggestions = ["Create Scene"];
     } else {
-        if (!GodotState.lastNodeAdded) {
-            suggestions = NodeTypeSuggestions.default;
-        } else {
-            const lastNodeType = getLastNodeType(GodotState.lastNodeAdded);
-            if (NodeTypeSuggestions[lastNodeType]) {
-                suggestions = NodeTypeSuggestions[lastNodeType];
-            } else {
-                suggestions = NodeTypeSuggestions.defaultPostNode;
-            }
-        }
+        suggestions = NodeTypeSuggestions.defaultPostNode;
     }
 
     suggestions.forEach(addSuggestionButton);
@@ -123,36 +62,19 @@ function addSuggestionButton(text) {
     const btn = document.createElement("button");
     btn.className = "suggestion-btn";
     btn.innerText = text;
-    btn.onclick = () => window.handleSuggestionClick(text);
+
+    btn.onclick = () => {
+        if (typeof window.handleSuggestionClick === "function") {
+            window.handleSuggestionClick(text);
+        } else {
+            console.error("handleSuggestionClick not defined");
+        }
+    };
+
     suggestionContainer.appendChild(btn);
 }
 
-// --------------------------------------------------
-// ✅ MISSING FUNCTION (FIXED)
-// --------------------------------------------------
-
-function handleSuggestionClick(text) {
-    if (!chatInput) return;
-
-    chatInput.value = text;
-
-    // Route through the same pipeline as manual input
-    chatInput.dispatchEvent(
-        new KeyboardEvent("keydown", { key: "Enter" })
-    );
-}
-
-// --------------------------------------------------
 // Expose globals
-// --------------------------------------------------
-
-window.chatLog = chatLog;
-window.chatInput = chatInput;
-window.infoPanel = infoPanel;
-
 window.addMessage = addMessage;
 window.updateInfoPanel = updateInfoPanel;
 window.updateSuggestions = updateSuggestions;
-window.handleSuggestionClick = handleSuggestionClick;
-
-console.log("godot_ui.js loaded successfully.");
