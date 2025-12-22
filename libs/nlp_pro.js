@@ -1,6 +1,6 @@
 // libs/nlp_pro.js
 // Author: CCVO
-// Purpose: Intent-aware NLP controller (human-friendly)
+// Purpose: Intent-aware NLP controller (human-first)
 
 class NLPProcessor {
     constructor(state, chatInput, addMessage) {
@@ -13,7 +13,7 @@ class NLPProcessor {
     }
 
     // ------------------------------
-    // Button-driven intent
+    // Button intent handler
     // ------------------------------
     handleIntent(intent) {
         const prompts = {
@@ -30,35 +30,36 @@ class NLPProcessor {
     }
 
     // ------------------------------
-    // Text input entry point
+    // Main text processor
     // ------------------------------
-    process(input) {
+    async process(input) {
         input = input.trim();
         if (!input) return;
 
         this.addMessage("user", input);
 
-        // 1️⃣ If answering a question → consume it
+        // 1️⃣ Explicit answer to a question
         if (this.state.awaitingAnswerFor) {
-            this.consumeAnswer(input);
+            await this.consumeAnswer(input);
             return;
         }
 
-        // 2️⃣ If looks like a command → execute
+        // 2️⃣ Explicit command
         if (this.looksLikeCommand(input)) {
-            const result = ProjectManager.process_nlp_command(input);
-            this.addMessage("system", result ?? `Executed: "${input}"`);
+            const result = await ProjectManager.process_nlp_command(input);
+            this.addMessage("system", result);
+            this.refresh();
             return;
         }
 
-        // 3️⃣ Otherwise infer intent from workflow
-        this.inferImplicitIntent(input);
+        // 3️⃣ Implicit intent
+        await this.inferImplicitIntent(input);
     }
 
     // ------------------------------
-    // Answer consumption
+    // Consume prompted answers
     // ------------------------------
-    consumeAnswer(text) {
+    async consumeAnswer(text) {
         switch (this.state.awaitingAnswerFor) {
             case "GAME_NAME":
                 this.state.gameName = text;
@@ -72,20 +73,21 @@ class NLPProcessor {
 
             case "SCENE_NAME":
                 this.state.currentScene = text;
-                ProjectManager.process_nlp_command(`create scene ${text}`);
+                await ProjectManager.process_nlp_command(`create scene ${text}`);
                 this.addMessage("system", `Scene "${text}" created.`);
                 break;
         }
 
         this.state.awaitingAnswerFor = null;
-        updateInfoPanel();
-        updateSuggestions();
+        this.refresh();
     }
 
     // ------------------------------
-    // Implicit intent (magic)
+    // Implicit intent inference
     // ------------------------------
-    inferImplicitIntent(text) {
+    async inferImplicitIntent(text) {
+        const lower = text.toLowerCase();
+
         if (!this.state.gameName) {
             this.state.gameName = text;
             this.addMessage("system", `Game named "${text}".`);
@@ -96,30 +98,54 @@ class NLPProcessor {
         }
         else if (!this.state.currentScene) {
             this.state.currentScene = text;
-            ProjectManager.process_nlp_command(`create scene ${text}`);
+            await ProjectManager.process_nlp_command(`create scene ${text}`);
             this.addMessage("system", `Scene "${text}" created.`);
+        }
+        else if (["player", "camera", "button", "label"].includes(lower)) {
+            const typeMap = {
+                player: "KinematicBody",
+                camera: "Camera",
+                button: "Button",
+                label: "Label"
+            };
+
+            const nodeName = lower.charAt(0).toUpperCase() + lower.slice(1);
+            const nodeType = typeMap[lower];
+
+            await ProjectManager.process_nlp_command(
+                `add node ${nodeName} ${nodeType} to ${this.state.currentScene}`
+            );
+
+            this.addMessage(
+                "system",
+                `Node "${nodeName}" added to scene "${this.state.currentScene}".`
+            );
         }
         else {
             this.addMessage(
                 "system",
-                `I’m not sure what "${text}" refers to. Try a command like "add player" or use the buttons.`
+                `I didn’t understand "${text}". Try "add player" or use the buttons.`
             );
         }
 
-        updateInfoPanel();
-        updateSuggestions();
+        this.refresh();
     }
 
     // ------------------------------
-    // Command detection
+    // Helpers
     // ------------------------------
     looksLikeCommand(text) {
         return /^(create|add|set|attach|link|export|list|name)\b/i.test(text);
     }
+
+    refresh() {
+        updateInfoPanel();
+        updateSuggestions();
+    }
 }
 
 // ------------------------------
-// Global wiring
+// Wiring
 // ------------------------------
 const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
 
@@ -134,4 +160,4 @@ chatInput.addEventListener("keydown", e => {
     }
 });
 
-console.log("NLP ready: implicit intent + commands unified.");
+console.log("NLP active: async-safe, intent-aware.");
