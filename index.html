@@ -42,58 +42,116 @@
       <input id="nlp-command" placeholder="Type a command..." />
       <button id="nlp-send">Send</button>
     </div>
+
     <div id="nlp-log"></div>
+
+    <!-- Dynamic suggestion buttons -->
     <div id="suggestions"></div>
   </div>
 
 </div>
 
-<!-- Touch Editor Overlay -->
-<div id="touch-editor" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:9999; display:flex; flex-direction:column;">
-    <!-- Top Bar -->
-    <div style="flex:0 0 50px; background:#222; display:flex; align-items:center; padding:5px; border-bottom:2px solid #444;">
-        <span style="flex:1; color:#eee; font-weight:bold; font-size:1.2em;">Android Touch Layout Editor</span>
-        <button id="save-editor" style="margin-right:5px; padding:5px 10px; background:#333; color:#eee; border:1px solid #444; cursor:pointer;">Save</button>
-        <button id="close-editor" style="padding:5px 10px; background:#333; color:#eee; border:1px solid #444; cursor:pointer;">Close</button>
-    </div>
+<!-- ============================= -->
+<!-- Android Touch Layout Editor -->
+<!-- ============================= -->
+<div id="touch-editor"
+     style="display:none;
+            position:fixed;
+            top:0;
+            left:0;
+            width:100%;
+            height:100%;
+            background:rgba(0,0,0,0.85);
+            z-index:9999;
+            flex-direction:column;">
 
-    <!-- Canvas Area -->
-    <div id="editor-canvas" style="flex:1; position:relative; background:#111; overflow:hidden;">
-        <!-- Draggable nodes are dynamically added here -->
-    </div>
+  <!-- Top Bar -->
+  <div style="flex:0 0 50px;
+              background:#222;
+              display:flex;
+              align-items:center;
+              padding:5px;
+              border-bottom:2px solid #444;">
+
+    <span style="flex:1;
+                 color:#eee;
+                 font-weight:bold;
+                 font-size:1.2em;">
+      Android Touch Layout Editor
+    </span>
+
+    <button id="save-editor"
+            style="margin-right:5px;
+                   padding:5px 10px;
+                   background:#333;
+                   color:#eee;
+                   border:1px solid #444;
+                   cursor:pointer;">
+      Save
+    </button>
+
+    <button id="close-editor"
+            style="padding:5px 10px;
+                   background:#333;
+                   color:#eee;
+                   border:1px solid #444;
+                   cursor:pointer;">
+      Close
+    </button>
+  </div>
+
+  <!-- Canvas Area -->
+  <div id="editor-canvas"
+       style="flex:1;
+              position:relative;
+              background:#111;
+              overflow:hidden;">
+    <!-- Touch buttons are injected dynamically -->
+  </div>
+
 </div>
 
-<!-- CORE -->
+<!-- ============================= -->
+<!-- CORE SYSTEMS -->
+<!-- ============================= -->
 <script src="core/project_graph.js"></script>
 <script src="libs/project_manager_core.js"></script>
 <script src="asset_manager/asset_handler.js"></script>
 <script src="libs/scene_composer.js"></script>
 <script src="export/zip_exporter.js"></script>
 
-<!-- LOGIC -->
+<!-- ============================= -->
+<!-- NLP + GODOT ASSEMBLER LOGIC -->
+<!-- ============================= -->
 <script src="libs/jszip.min.js"></script>
-<script src="libs/nlp_pro.js"></script>
-<script src="libs/project_manager.js"></script>
-<script src="libs/godot.js"></script>
 
+<!-- Modular Godot Assembler -->
+<script src="libs/godot_state.js"></script>
+<script src="libs/godot_ui.js"></script>
+<script src="libs/godot_nodes.js"></script>
+<script src="libs/godot_touch_editor.js"></script>
+<script src="libs/godot_flow.js"></script>
+<script src="libs/godot_input.js"></script>
+
+<!-- NLP (used by godot_input / flow) -->
+<script src="libs/nlp_pro.js"></script>
+
+<!-- ============================= -->
+<!-- GUI → INPUT BRIDGE -->
+<!-- ============================= -->
 <script>
-  // Connect NLP input to ProjectManager (for fallback)
   const nlpInput = document.getElementById("nlp-command");
-  const nlpSend = document.getElementById("nlp-send");
-  const nlpLog = document.getElementById("nlp-log");
+  const nlpSend  = document.getElementById("nlp-send");
 
   async function sendNLPCommandGUI() {
     const cmd = nlpInput.value.trim();
     if (!cmd) return;
-    nlpLog.innerHTML += `> ${cmd}\n`;
     nlpInput.value = "";
 
-    if (window.ProjectManager) {
-      const result = await ProjectManager.process_nlp_command(cmd);
-      nlpLog.innerHTML += `${result}\n`;
-      nlpLog.scrollTop = nlpLog.scrollHeight;
+    if (window.GodotInput && GodotInput.handleUserInput) {
+      await GodotInput.handleUserInput(cmd);
     } else {
-      nlpLog.innerHTML += "ProjectManager not loaded.\n";
+      console.error("GodotInput not initialized.");
     }
   }
 
@@ -101,8 +159,6 @@
   nlpInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") sendNLPCommandGUI();
   });
-
-  // Touch editor buttons already handled in godot.js
 </script>
 
 </body>
