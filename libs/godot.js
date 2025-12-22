@@ -1,16 +1,21 @@
 // godot.js
 // Author: CCVO
-// Purpose: Proactive chat guidance with clickable suggestions for GodotGameAssembler
+// Purpose: Dynamic context-aware guidance with clickable suggestions for GodotGameAssembler
 
-// Global state for tracking project progress
+// ------------------------------
+// Global State
+// ------------------------------
 const GodotState = {
     gameName: null,
     concept: null,
     currentScene: null,
-    lastNodeAdded: null
+    lastNodeAdded: null,
+    nodesInScene: {} // { sceneName: [ { name, type, script } ] }
 };
 
-// DOM references
+// ------------------------------
+// DOM References
+// ------------------------------
 const chatLog = document.getElementById("chat-log");
 const chatInput = document.getElementById("chat-input");
 const infoPanel = document.getElementById("info-panel");
@@ -23,7 +28,11 @@ if (!suggestionContainer) {
     chatLog.parentNode.appendChild(suggestionContainer);
 }
 
-// Helper: append messages to chat log
+// ------------------------------
+// Helper Functions
+// ------------------------------
+
+// Append messages to chat
 function addMessage(sender, message) {
     const msgDiv = document.createElement("div");
     msgDiv.className = sender;
@@ -32,7 +41,7 @@ function addMessage(sender, message) {
     chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-// Helper: update top-right info panel
+// Update top-right info panel
 function updateInfoPanel() {
     infoPanel.innerHTML = "";
     if (GodotState.currentScene) {
@@ -40,13 +49,12 @@ function updateInfoPanel() {
         sceneHeader.innerText = `Scene: ${GodotState.currentScene}`;
         infoPanel.appendChild(sceneHeader);
 
-        const nodes = ProjectGraph.getNodes(GodotState.currentScene);
-        if (nodes && nodes.length > 0) {
+        const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
+        if (nodes.length > 0) {
             const nodeList = document.createElement("ul");
             nodes.forEach(node => {
                 const nodeItem = document.createElement("li");
-                nodeItem.innerText = `${node.name} (${node.type})`;
-                if (node.script) nodeItem.innerText += ` → Script: ${node.script}`;
+                nodeItem.innerText = `${node.name} (${node.type})${node.script ? ` → Script: ${node.script}` : ""}`;
                 nodeList.appendChild(nodeItem);
             });
             infoPanel.appendChild(nodeList);
@@ -62,30 +70,54 @@ function updateInfoPanel() {
     infoPanel.appendChild(projectInfo);
 }
 
-// Determine next proactive prompt
-function getNextPrompt() {
-    if (!GodotState.gameName) return "What is the name of your game?";
-    if (!GodotState.concept) return `Please describe the concept of "${GodotState.gameName}".`;
-    if (!GodotState.currentScene) return "Let's create your first scene. What should it be called?";
-    return `What would you like to do next in scene "${GodotState.currentScene}"? You can add nodes, attach scripts, or create new scenes.`;
-}
+// ------------------------------
+// Node Type Suggestions Table
+// ------------------------------
+const NodeTypeSuggestions = {
+    default: ["KinematicBody", "RigidBody", "Camera", "MeshInstance", "Button", "Label", "Thumbstick", "Light"],
+    Player: ["Attach Movement Script", "Add Camera", "Add UI", "Set Spawn Position"],
+    Camera: ["Set Transform", "Link to Player"],
+    Button: ["Link to Scene", "Attach Script"],
+    defaultPostNode: ["Add Another Node", "Attach Script", "Create New Scene", "Export Project"]
+};
 
-// Update clickable suggestions
+// ------------------------------
+// Suggestions Logic
+// ------------------------------
 function updateSuggestions() {
     suggestionContainer.innerHTML = "";
+    let suggestions = [];
 
+    // Project initial setup
     if (!GodotState.gameName) {
-        addSuggestionButton("Set Game Name");
+        suggestions = ["Set Game Name"];
     } else if (!GodotState.concept) {
-        addSuggestionButton("Set Concept");
+        suggestions = ["Set Concept"];
     } else if (!GodotState.currentScene) {
-        addSuggestionButton("Create Scene");
+        suggestions = ["Create Scene"];
     } else {
-        addSuggestionButton("Add Node");
-        addSuggestionButton("Attach Script");
-        addSuggestionButton("Create New Scene");
-        addSuggestionButton("Export Project");
+        // Scene exists, dynamic node/script suggestions
+        if (!GodotState.lastNodeAdded) {
+            suggestions = NodeTypeSuggestions.default;
+        } else {
+            const lastNodeType = getLastNodeType(GodotState.lastNodeAdded);
+            if (NodeTypeSuggestions[lastNodeType]) {
+                suggestions = NodeTypeSuggestions[lastNodeType];
+            } else {
+                suggestions = NodeTypeSuggestions.defaultPostNode;
+            }
+        }
     }
+
+    // Add buttons
+    suggestions.forEach(text => addSuggestionButton(text));
+}
+
+// Helper to get last node type
+function getLastNodeType(nodeName) {
+    const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
+    const node = nodes.find(n => n.name === nodeName);
+    return node ? node.type : null;
 }
 
 // Add a clickable suggestion button
@@ -99,6 +131,7 @@ function addSuggestionButton(text) {
 
 // Handle suggestion button clicks
 function handleSuggestionClick(action) {
+    // Mapping button text to commands or prompts
     switch (action) {
         case "Set Game Name":
             chatInput.focus();
@@ -112,13 +145,37 @@ function handleSuggestionClick(action) {
             chatInput.focus();
             addMessage("system", "Type the name of your new scene.");
             break;
-        case "Add Node":
+        case "Add Another Node":
             chatInput.focus();
-            addMessage("system", "Example: add node Player KinematicBody to SceneName");
+            addMessage("system", "Type: add node <NodeName> <Type> to <SceneName>");
             break;
         case "Attach Script":
+        case "Attach Movement Script":
+            if (!GodotState.lastNodeAdded) {
+                addMessage("system", "No node selected for script. Add a node first.");
+                break;
+            }
+            chatInput.value = `attach script ${GodotState.lastNodeAdded.toLowerCase()}_script.js to ${GodotState.lastNodeAdded} in ${GodotState.currentScene}`;
             chatInput.focus();
-            addMessage("system", "Example: attach script player.js to Player in SceneName");
+            addMessage("system", `Auto-filled script command. Press Enter to execute.`);
+            break;
+        case "Add Camera":
+            chatInput.value = `add node MainCamera Camera to ${GodotState.currentScene}`;
+            chatInput.focus();
+            addMessage("system", `Auto-filled camera addition. Press Enter to execute.`);
+            break;
+        case "Add UI":
+            chatInput.value = `add node StartButton Button to ${GodotState.currentScene}`;
+            chatInput.focus();
+            addMessage("system", `Auto-filled UI node addition. Press Enter to execute.`);
+            break;
+        case "Set Spawn Position":
+            chatInput.focus();
+            addMessage("system", `Use: set position <x> <y> <z> for ${GodotState.lastNodeAdded}`);
+            break;
+        case "Link to Scene":
+            chatInput.focus();
+            addMessage("system", `Use: link button <ButtonName> to scene <SceneName>`);
             break;
         case "Create New Scene":
             chatInput.focus();
@@ -128,10 +185,16 @@ function handleSuggestionClick(action) {
             ProjectManager.execute(`export project ${GodotState.gameName || "MyGame"}`);
             addMessage("system", `Project exported as "${GodotState.gameName || "MyGame"}".`);
             break;
+        default:
+            chatInput.focus();
+            addMessage("system", `Type command for: ${action}`);
+            break;
     }
 }
 
-// Process user input
+// ------------------------------
+// Input Processing
+// ------------------------------
 function processInput(input) {
     input = input.trim();
     if (!input) return;
@@ -154,31 +217,47 @@ function processInput(input) {
         GodotState.currentScene = sceneName;
         ProjectManager.execute(`create scene ${sceneName}`);
         addMessage("system", `Scene "${sceneName}" created and selected.`);
+        GodotState.nodesInScene[sceneName] = [];
     }
-    // Handle commands for existing scene
+    // Handle other commands
     else {
         ProjectManager.execute(input);
 
-        // Track last node added if applicable
+        // Track nodes added
         const matchAddNode = input.match(/add node (\w+) (\w+) to (\w+)/i);
         if (matchAddNode) {
-            GodotState.lastNodeAdded = matchAddNode[1];
+            const [_, name, type, scene] = matchAddNode;
+            GodotState.lastNodeAdded = name;
+            if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
+            GodotState.nodesInScene[scene].push({ name, type, script: null });
         }
 
+        // Track scripts attached
         const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
         if (matchAttachScript) {
-            GodotState.lastNodeAdded = matchAttachScript[2];
+            const [_, scriptName, nodeName, scene] = matchAttachScript;
+            const nodes = GodotState.nodesInScene[scene] || [];
+            const node = nodes.find(n => n.name === nodeName);
+            if (node) node.script = scriptName;
         }
     }
 
-    // Update info panel and suggestions
     updateInfoPanel();
-    const nextPrompt = getNextPrompt();
-    addMessage("system", nextPrompt);
+    addMessage("system", getNextPrompt());
     updateSuggestions();
 }
 
-// Event listener for input box
+// Determine next proactive prompt
+function getNextPrompt() {
+    if (!GodotState.gameName) return "What is the name of your game?";
+    if (!GodotState.concept) return `Please describe the concept of "${GodotState.gameName}".`;
+    if (!GodotState.currentScene) return "Let's create your first scene. What should it be called?";
+    return `Next, add nodes, attach scripts, or create a new scene in "${GodotState.currentScene}".`;
+}
+
+// ------------------------------
+// Event Listener
+// ------------------------------
 chatInput.addEventListener("keydown", function(e) {
     if (e.key === "Enter") {
         const input = chatInput.value;
@@ -187,10 +266,11 @@ chatInput.addEventListener("keydown", function(e) {
     }
 });
 
-// Initial prompt on load
+// ------------------------------
+// Initial Load
+// ------------------------------
 window.addEventListener("DOMContentLoaded", () => {
     addMessage("system", "Welcome to GodotGameAssembler!");
-    const initialPrompt = getNextPrompt();
-    addMessage("system", initialPrompt);
+    addMessage("system", getNextPrompt());
     updateSuggestions();
 });
