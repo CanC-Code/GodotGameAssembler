@@ -263,3 +263,13 @@ header {
 .suggestion-btn:hover {
     background-color: #555;
 }
+/* Label inside each touch node */
+.touch-node .node-label {
+    position: absolute;
+    bottom: -16px;  /* Below the node circle */
+    font-size: 10px;
+    color: #fff;
+    text-align: center;
+    width: 100%;
+    pointer-events: none; /* Don't block dragging */
+}
