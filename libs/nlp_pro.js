@@ -1,47 +1,36 @@
 // libs/nlp_pro.js
 // Author: CCVO
-// Purpose: Context-aware NLP workflow controller
+// Purpose: Intent-aware NLP controller (human-friendly)
 
 class NLPProcessor {
-    constructor(state, chatInput, addMessageCallback) {
+    constructor(state, chatInput, addMessage) {
         this.state = state;
         this.chatInput = chatInput;
-        this.addMessage = addMessageCallback;
+        this.addMessage = addMessage;
 
-        if (!this.state.workflowStage) {
-            this.state.workflowStage = "INIT";
-        }
-
-        this.state.awaitingAnswerFor = null;
+        this.state.workflowStage ??= "INIT";
+        this.state.awaitingAnswerFor ??= null;
     }
 
     // ------------------------------
-    // Suggestion Button Entry
+    // Button-driven intent
     // ------------------------------
     handleIntent(intent) {
-        switch (intent) {
-            case "Set Game Name":
-                this.state.awaitingAnswerFor = "GAME_NAME";
-                this.addMessage("system", "What is the name of your game?");
-                break;
+        const prompts = {
+            "Set Game Name": ["GAME_NAME", "What is the name of your game?"],
+            "Set Concept": ["CONCEPT", "Describe the game concept."],
+            "Create Scene": ["SCENE_NAME", "What should the scene be called?"]
+        };
 
-            case "Set Concept":
-                this.state.awaitingAnswerFor = "CONCEPT";
-                this.addMessage("system", "Describe the game concept.");
-                break;
+        if (!prompts[intent]) return;
 
-            case "Create Scene":
-                this.state.awaitingAnswerFor = "SCENE_NAME";
-                this.addMessage("system", "What should the scene be called?");
-                break;
-
-            default:
-                this.addMessage("system", `Action "${intent}" not yet implemented.`);
-        }
+        const [slot, prompt] = prompts[intent];
+        this.state.awaitingAnswerFor = slot;
+        this.addMessage("system", prompt);
     }
 
     // ------------------------------
-    // Text Input Entry
+    // Text input entry point
     // ------------------------------
     process(input) {
         input = input.trim();
@@ -49,33 +38,42 @@ class NLPProcessor {
 
         this.addMessage("user", input);
 
-        // 🔑 If we're awaiting an answer, consume it
+        // 1️⃣ If answering a question → consume it
         if (this.state.awaitingAnswerFor) {
             this.consumeAnswer(input);
             return;
         }
 
-        // Freeform fallback
-        executeProjectCommand(input);
-        this.addMessage("system", `Executed: "${input}"`);
+        // 2️⃣ If looks like a command → execute
+        if (this.looksLikeCommand(input)) {
+            const result = ProjectManager.process_nlp_command(input);
+            this.addMessage("system", result ?? `Executed: "${input}"`);
+            return;
+        }
+
+        // 3️⃣ Otherwise infer intent from workflow
+        this.inferImplicitIntent(input);
     }
 
-    consumeAnswer(input) {
+    // ------------------------------
+    // Answer consumption
+    // ------------------------------
+    consumeAnswer(text) {
         switch (this.state.awaitingAnswerFor) {
             case "GAME_NAME":
-                this.state.gameName = input;
-                this.addMessage("system", `Game named "${input}".`);
+                this.state.gameName = text;
+                this.addMessage("system", `Game named "${text}".`);
                 break;
 
             case "CONCEPT":
-                this.state.concept = input;
-                this.addMessage("system", `Concept set: "${input}".`);
+                this.state.concept = text;
+                this.addMessage("system", `Concept set: "${text}".`);
                 break;
 
             case "SCENE_NAME":
-                this.state.currentScene = input;
-                executeProjectCommand(`create scene ${input}`);
-                this.addMessage("system", `Scene "${input}" created.`);
+                this.state.currentScene = text;
+                ProjectManager.process_nlp_command(`create scene ${text}`);
+                this.addMessage("system", `Scene "${text}" created.`);
                 break;
         }
 
@@ -83,25 +81,57 @@ class NLPProcessor {
         updateInfoPanel();
         updateSuggestions();
     }
+
+    // ------------------------------
+    // Implicit intent (magic)
+    // ------------------------------
+    inferImplicitIntent(text) {
+        if (!this.state.gameName) {
+            this.state.gameName = text;
+            this.addMessage("system", `Game named "${text}".`);
+        }
+        else if (!this.state.concept) {
+            this.state.concept = text;
+            this.addMessage("system", `Concept set: "${text}".`);
+        }
+        else if (!this.state.currentScene) {
+            this.state.currentScene = text;
+            ProjectManager.process_nlp_command(`create scene ${text}`);
+            this.addMessage("system", `Scene "${text}" created.`);
+        }
+        else {
+            this.addMessage(
+                "system",
+                `I’m not sure what "${text}" refers to. Try a command like "add player" or use the buttons.`
+            );
+        }
+
+        updateInfoPanel();
+        updateSuggestions();
+    }
+
+    // ------------------------------
+    // Command detection
+    // ------------------------------
+    looksLikeCommand(text) {
+        return /^(create|add|set|attach|link|export|list|name)\b/i.test(text);
+    }
 }
 
 // ------------------------------
-// Global Wiring
+// Global wiring
 // ------------------------------
-window.NLPProcessor = NLPProcessor;
-
 const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
 
-window.handleSuggestionClick = function (intent) {
+window.handleSuggestionClick = intent =>
     nlpProcessor.handleIntent(intent);
-};
 
 chatInput.addEventListener("keydown", e => {
     if (e.key === "Enter") {
-        const value = chatInput.value;
+        const v = chatInput.value;
         chatInput.value = "";
-        nlpProcessor.process(value);
+        nlpProcessor.process(v);
     }
 });
 
-console.log("nlp_pro.js loaded: intent-aware NLP active.");
+console.log("NLP ready: implicit intent + commands unified.");
