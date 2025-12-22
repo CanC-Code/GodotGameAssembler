@@ -11,133 +11,97 @@ class NLPProcessor {
         if (!this.state.workflowStage) {
             this.state.workflowStage = "INIT";
         }
+
+        this.state.awaitingAnswerFor = null;
     }
 
+    // ------------------------------
+    // Suggestion Button Entry
+    // ------------------------------
+    handleIntent(intent) {
+        switch (intent) {
+            case "Set Game Name":
+                this.state.awaitingAnswerFor = "GAME_NAME";
+                this.addMessage("system", "What is the name of your game?");
+                break;
+
+            case "Set Concept":
+                this.state.awaitingAnswerFor = "CONCEPT";
+                this.addMessage("system", "Describe the game concept.");
+                break;
+
+            case "Create Scene":
+                this.state.awaitingAnswerFor = "SCENE_NAME";
+                this.addMessage("system", "What should the scene be called?");
+                break;
+
+            default:
+                this.addMessage("system", `Action "${intent}" not yet implemented.`);
+        }
+    }
+
+    // ------------------------------
+    // Text Input Entry
+    // ------------------------------
     process(input) {
         input = input.trim();
         if (!input) return;
 
         this.addMessage("user", input);
 
-        switch (this.state.workflowStage) {
-            case "INIT":
+        // 🔑 If we're awaiting an answer, consume it
+        if (this.state.awaitingAnswerFor) {
+            this.consumeAnswer(input);
+            return;
+        }
+
+        // Freeform fallback
+        executeProjectCommand(input);
+        this.addMessage("system", `Executed: "${input}"`);
+    }
+
+    consumeAnswer(input) {
+        switch (this.state.awaitingAnswerFor) {
+            case "GAME_NAME":
                 this.state.gameName = input;
-                this.state.workflowStage = "CONCEPT";
-                this.addMessage("system", `Game named "${this.state.gameName}".`);
+                this.addMessage("system", `Game named "${input}".`);
                 break;
 
             case "CONCEPT":
                 this.state.concept = input;
-                this.state.workflowStage = "SCENE";
-                this.addMessage("system", `Concept set: "${this.state.concept}".`);
+                this.addMessage("system", `Concept set: "${input}".`);
                 break;
 
-            case "SCENE":
-                this.createScene(input);
+            case "SCENE_NAME":
+                this.state.currentScene = input;
+                executeProjectCommand(`create scene ${input}`);
+                this.addMessage("system", `Scene "${input}" created.`);
                 break;
-
-            case "NODE":
-                this.handleNodeInput(input);
-                break;
-
-            default:
-                console.warn("Unknown workflow stage:", this.state.workflowStage);
-                this.state.workflowStage = "INIT";
-                this.addMessage(
-                    "system",
-                    "Workflow reset. Please provide your game name."
-                );
-        }
-    }
-
-    createScene(input) {
-        const match = input.match(/(?:create\s+scene\s+)?(\w+)/i);
-        if (!match) {
-            this.addMessage("system", "Please provide a valid scene name.");
-            return;
         }
 
-        const sceneName = match[1];
-        this.state.currentScene = sceneName;
-
-        if (!this.state.nodesInScene) {
-            this.state.nodesInScene = {};
-        }
-
-        this.state.nodesInScene[sceneName] = [];
-
-        executeProjectCommand(`create scene ${sceneName}`);
-
-        this.state.workflowStage = "NODE";
-        this.addMessage("system", `Scene "${sceneName}" created and selected.`);
-    }
-
-    handleNodeInput(input) {
-        const lower = input.toLowerCase();
-        let nodeName = null;
-        let nodeType = null;
-
-        if (lower.includes("player")) {
-            nodeName = "Player";
-            nodeType = "KinematicBody";
-        } else if (lower.includes("camera")) {
-            nodeName = "MainCamera";
-            nodeType = "Camera";
-        } else if (lower.includes("button")) {
-            nodeName = "Button1";
-            nodeType = "Button";
-        }
-
-        if (nodeName && nodeType) {
-            if (!this.state.nodesInScene[this.state.currentScene]) {
-                this.state.nodesInScene[this.state.currentScene] = [];
-            }
-
-            this.state.nodesInScene[this.state.currentScene].push({
-                name: nodeName,
-                type: nodeType,
-                script: null
-            });
-
-            executeProjectCommand(
-                `add node ${nodeName} ${nodeType} to ${this.state.currentScene}`
-            );
-
-            this.addMessage(
-                "system",
-                `Node "${nodeName}" (${nodeType}) added to "${this.state.currentScene}".`
-            );
-        } else {
-            executeProjectCommand(input);
-            this.addMessage("system", `Executed: "${input}"`);
-        }
+        this.state.awaitingAnswerFor = null;
+        updateInfoPanel();
+        updateSuggestions();
     }
 }
 
 // ------------------------------
-// Integration
+// Global Wiring
 // ------------------------------
 window.NLPProcessor = NLPProcessor;
 
 const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
 
-// ✅ THIS IS THE MISSING PIECE
-window.handleSuggestionClick = function (text) {
-    chatInput.value = "";
-    nlpProcessor.process(text);
-    updateInfoPanel();
-    updateSuggestions();
+window.handleSuggestionClick = function (intent) {
+    nlpProcessor.handleIntent(intent);
 };
 
-// SINGLE authoritative Enter handler
 chatInput.addEventListener("keydown", e => {
     if (e.key === "Enter") {
         const value = chatInput.value;
         chatInput.value = "";
         nlpProcessor.process(value);
-        updateInfoPanel();
-        updateSuggestions();
     }
 });
 
-console.log("nlp_pro.js loaded: NLP workflow active.");
+console.log("nlp_pro.js loaded: intent-aware NLP active.");
