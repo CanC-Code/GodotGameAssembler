@@ -1,22 +1,36 @@
 // libs/godot_state.js
 // Author: CCVO
-// Purpose: Store global Godot state and helper functions
+// Purpose: Centralized global state for Godot Game Assembler
+
+const WorkflowStage = {
+    INIT: "INIT",
+    CONCEPT: "CONCEPT",
+    SCENE: "SCENE",
+    NODE: "NODE",
+    MENU_LAYOUT: "MENU_LAYOUT",
+    BUTTON_SETUP: "BUTTON_SETUP",
+    SCENE_TRANSITION: "SCENE_TRANSITION",
+    DONE: "DONE"
+};
 
 const GodotState = {
+    workflowStage: WorkflowStage.INIT,
+
     gameName: null,
     concept: null,
     currentScene: null,
-    lastNodeAdded: null,
-    nodesInScene: {} // { sceneName: [ { name, type, script, touchPosition } ] }
-};
 
-// Get last node type in current scene
-function getLastNodeType(nodeName) {
-    const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
-    const node = nodes.find(n => n.name === nodeName);
-    return node ? node.type : null;
-}
+    scenes: [],
+    nodesInScene: {},
+
+    lastNodeAdded: null,
+
+    androidControls: [],
+    uiElements: []
+};
 
 // Expose globally
 window.GodotState = GodotState;
-window.getLastNodeType = getLastNodeType;
+window.WorkflowStage = WorkflowStage;
+
+console.log("godot_state.js loaded");
