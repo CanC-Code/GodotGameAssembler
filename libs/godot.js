@@ -1,6 +1,20 @@
 // godot.js
 // Author: CCVO
-// Purpose: Dynamic guidance with Android touch UI and touch layout editor
+// Purpose: Progressive workflow guidance with dynamic Android touch UI
+
+// ------------------------------
+// Workflow Stages
+// ------------------------------
+const WorkflowStage = {
+    GAME_NAME: "gameName",
+    CONCEPT: "concept",
+    SCENE_CREATION: "sceneCreation",
+    NODE_SETUP: "nodeSetup",
+    MENU_LAYOUT: "menuLayout",
+    BUTTON_SETUP: "buttonSetup",
+    SCENE_TRANSITION: "sceneTransition",
+    DONE: "done"
+};
 
 // ------------------------------
 // Global State
@@ -11,7 +25,7 @@ const GodotState = {
     currentScene: null,
     lastNodeAdded: null,
     nodesInScene: {}, // { sceneName: [ { name, type, script, touchPosition } ] }
-    awaitingInputFor: null
+    stage: WorkflowStage.GAME_NAME
 };
 
 // ------------------------------
@@ -20,11 +34,26 @@ const GodotState = {
 const chatLog = document.getElementById("nlp-log");
 const chatInput = document.getElementById("nlp-command");
 const infoPanel = document.getElementById("file-info");
+
 let suggestionContainer = document.getElementById("suggestions");
 if (!suggestionContainer) {
     suggestionContainer = document.createElement("div");
     suggestionContainer.id = "suggestions";
     chatLog.parentNode.insertBefore(suggestionContainer, chatLog.nextSibling);
+}
+
+// Touch Editor (hidden until needed)
+let editor = document.getElementById("touch-editor");
+if (!editor) {
+    editor = document.createElement("div");
+    editor.id = "touch-editor";
+    editor.style.display = "none";
+    editor.innerHTML = `
+        <div style="position:relative;width:100%;height:400px;background:#222;border:2px solid #444;" id="editor-canvas"></div>
+        <button id="save-editor">Save</button>
+        <button id="close-editor">Close</button>
+    `;
+    document.body.appendChild(editor);
 }
 
 // ------------------------------
@@ -66,17 +95,6 @@ function updateInfoPanel() {
     infoPanel.appendChild(projectInfo);
 }
 
-// ------------------------------
-// Node Suggestions
-// ------------------------------
-const NodeTypeSuggestions = {
-    default: ["KinematicBody", "RigidBody", "Camera", "MeshInstance", "Button", "Label", "Thumbstick", "Light"],
-    Player: ["Attach Movement Script", "Assign Jump Script", "Assign Interact Script", "Add Camera", "Add UI", "Set Spawn Position", "Add Android Controls", "Edit Android Touch Layout"],
-    Camera: ["Set Transform", "Link to Player"],
-    Button: ["Link to Scene", "Attach Script"],
-    defaultPostNode: ["Add Another Node", "Attach Script", "Create New Scene", "Export Project"]
-};
-
 function getLastNodeType(nodeName) {
     const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
     const node = nodes.find(n => n.name === nodeName);
@@ -86,20 +104,33 @@ function getLastNodeType(nodeName) {
 // ------------------------------
 // Suggestions UI
 // ------------------------------
+const NodeTypeSuggestions = {
+    default: ["KinematicBody", "RigidBody", "Camera", "MeshInstance", "Button", "Label", "Thumbstick", "Light"],
+    Player: ["Attach Movement Script", "Assign Jump Script", "Assign Interact Script", "Add Camera", "Add UI", "Set Spawn Position", "Add Android Controls", "Edit Android Touch Layout"],
+    Camera: ["Set Transform", "Link to Player"],
+    Button: ["Link to Scene", "Attach Script"],
+    defaultPostNode: ["Add Another Node", "Attach Script", "Create New Scene", "Export Project"]
+};
+
 function updateSuggestions() {
     suggestionContainer.innerHTML = "";
     let suggestions = [];
 
-    if (!GodotState.gameName) suggestions = ["Set Game Name"];
-    else if (!GodotState.concept) suggestions = ["Set Concept"];
-    else if (!GodotState.currentScene) suggestions = ["Create Scene"];
-    else {
-        if (!GodotState.lastNodeAdded) suggestions = NodeTypeSuggestions.default;
-        else {
-            const lastNodeType = getLastNodeType(GodotState.lastNodeAdded);
-            if (NodeTypeSuggestions[lastNodeType]) suggestions = NodeTypeSuggestions[lastNodeType];
-            else suggestions = NodeTypeSuggestions.defaultPostNode;
-        }
+    switch (GodotState.stage) {
+        case WorkflowStage.GAME_NAME: suggestions = ["Set Game Name"]; break;
+        case WorkflowStage.CONCEPT: suggestions = ["Set Concept"]; break;
+        case WorkflowStage.SCENE_CREATION: suggestions = ["Create Scene"]; break;
+        case WorkflowStage.NODE_SETUP: 
+            if (!GodotState.lastNodeAdded) suggestions = NodeTypeSuggestions.default;
+            else {
+                const type = getLastNodeType(GodotState.lastNodeAdded);
+                suggestions = NodeTypeSuggestions[type] || NodeTypeSuggestions.defaultPostNode;
+            }
+            break;
+        case WorkflowStage.MENU_LAYOUT: suggestions = ["Add Menu Panel", "Add Layout"]; break;
+        case WorkflowStage.BUTTON_SETUP: suggestions = ["Add Button", "Link Button"]; break;
+        case WorkflowStage.SCENE_TRANSITION: suggestions = ["Set Scene Transition"]; break;
+        case WorkflowStage.DONE: suggestions = ["Export Project"]; break;
     }
 
     suggestions.forEach(text => addSuggestionButton(text));
@@ -109,30 +140,29 @@ function addSuggestionButton(text) {
     const btn = document.createElement("button");
     btn.className = "suggestion-btn";
     btn.innerText = text;
-    btn.onclick = () => processSuggestionAction(text);
+    btn.onclick = () => handleSuggestionClick(text);
     suggestionContainer.appendChild(btn);
 }
 
 // ------------------------------
 // Suggestion Handlers
 // ------------------------------
-function processSuggestionAction(action) {
-    chatInput.focus();
+function handleSuggestionClick(action) {
     switch (action) {
         case "Set Game Name":
-            GodotState.awaitingInputFor = "gameName";
+            chatInput.focus();
             addMessage("system", "Please type the name of your game in the input box.");
             break;
         case "Set Concept":
-            GodotState.awaitingInputFor = "concept";
+            chatInput.focus();
             addMessage("system", "Please describe your game concept in the input box.");
             break;
         case "Create Scene":
-            GodotState.awaitingInputFor = "sceneName";
+            chatInput.focus();
             addMessage("system", "Type the name of your new scene.");
             break;
         case "Add Another Node":
-            GodotState.awaitingInputFor = "nodeName";
+            chatInput.focus();
             addMessage("system", "Type: add node <NodeName> <Type> to <SceneName>");
             break;
         case "Attach Script":
@@ -143,13 +173,16 @@ function processSuggestionAction(action) {
             break;
         case "Add Camera":
             chatInput.value = `add node MainCamera Camera to ${GodotState.currentScene}`;
+            chatInput.focus();
             addMessage("system", "Auto-filled camera addition. Press Enter to execute.");
             break;
         case "Add UI":
             chatInput.value = `add node StartButton Button to ${GodotState.currentScene}`;
-            addMessage("system", "Auto-filled UI node addition. Press Enter to execute.");
+            chatInput.focus();
+            addMessage("system", "Auto-filled UI node addition. Press Enter.");
             break;
         case "Set Spawn Position":
+            chatInput.focus();
             addMessage("system", `Use: set position 0 1 0 for ${GodotState.lastNodeAdded}`);
             break;
         case "Add Android Controls":
@@ -159,10 +192,11 @@ function processSuggestionAction(action) {
             openTouchEditor();
             break;
         case "Link to Scene":
-            addMessage("system", `Use: link button <ButtonName> to scene <SceneName>`);
+            chatInput.focus();
+            addMessage("system", `Use: link button <ButtonName> to scene <GodotState.currentScene>`);
             break;
         case "Create New Scene":
-            GodotState.awaitingInputFor = "sceneName";
+            chatInput.focus();
             addMessage("system", "Type the name of the new scene you want to create.");
             break;
         case "Export Project":
@@ -170,6 +204,7 @@ function processSuggestionAction(action) {
             addMessage("system", `Project exported as "${GodotState.gameName || "MyGame"}".`);
             break;
         default:
+            chatInput.focus();
             addMessage("system", `Type command for: ${action}`);
             break;
     }
@@ -188,6 +223,7 @@ function attachScriptToLastNode(action) {
         default: scriptName = `${GodotState.lastNodeAdded.toLowerCase()}_script.js`; break;
     }
     chatInput.value = `attach script ${scriptName} to ${GodotState.lastNodeAdded} in ${GodotState.currentScene}`;
+    chatInput.focus();
     addMessage("system", `Auto-filled script command. Press Enter to execute.`);
 }
 
@@ -202,15 +238,18 @@ function suggestAndroidControls() {
     const interactButtonName = "InteractButton";
 
     chatInput.value = `add thumbstick ${thumbstickName} to ${GodotState.currentScene}`;
+    chatInput.focus();
     addMessage("system", `Auto-filled: Add movement thumbstick. Press Enter.`);
 
     setTimeout(() => {
         chatInput.value = `add button ${jumpButtonName} to ${GodotState.currentScene}`;
+        chatInput.focus();
         addMessage("system", `Auto-filled: Add jump button. Press Enter.`);
     }, 500);
 
     setTimeout(() => {
         chatInput.value = `add button ${interactButtonName} to ${GodotState.currentScene}`;
+        chatInput.focus();
         addMessage("system", `Auto-filled: Add interact button. Press Enter.`);
     }, 1000);
 }
@@ -221,12 +260,6 @@ function suggestAndroidControls() {
 function openTouchEditor() {
     if (!GodotState.currentScene) {
         addMessage("system", "No scene selected to edit touch layout.");
-        return;
-    }
-
-    const editor = document.getElementById("touch-editor");
-    if (!editor) {
-        addMessage("system", "Touch editor not found in DOM.");
         return;
     }
 
@@ -259,6 +292,7 @@ function openTouchEditor() {
     editor.style.display = "block";
 }
 
+// Draggable logic
 function makeDraggable(el, container, node) {
     let offsetX, offsetY, dragging = false;
 
@@ -299,41 +333,44 @@ function makeDraggable(el, container, node) {
 }
 
 // Editor Buttons
-document.getElementById("close-editor")?.addEventListener("click", () => {
-    document.getElementById("touch-editor").style.display = "none";
+document.getElementById("close-editor").addEventListener("click", () => {
+    editor.style.display = "none";
 });
-document.getElementById("save-editor")?.addEventListener("click", () => {
-    document.getElementById("touch-editor").style.display = "none";
+document.getElementById("save-editor").addEventListener("click", () => {
+    editor.style.display = "none";
     addMessage("system", "Touch layout saved for this scene.");
 });
 
 // ------------------------------
-// Input Processing
+// Stage-Driven Input Processing
 // ------------------------------
 function processInput(input) {
     input = input.trim();
     if (!input) return;
     addMessage("user", input);
 
-    switch(GodotState.awaitingInputFor) {
-        case "gameName":
+    switch (GodotState.stage) {
+        case WorkflowStage.GAME_NAME:
             GodotState.gameName = input;
-            addMessage("system", `Game named "${GodotState.gameName}".`);
-            GodotState.awaitingInputFor = null;
+            addMessage("system", `Game named "${input}".`);
+            GodotState.stage = WorkflowStage.CONCEPT;
             break;
-        case "concept":
+
+        case WorkflowStage.CONCEPT:
             GodotState.concept = input;
-            addMessage("system", `Concept set: "${GodotState.concept}".`);
-            GodotState.awaitingInputFor = null;
+            addMessage("system", `Concept set: "${input}".`);
+            GodotState.stage = WorkflowStage.SCENE_CREATION;
             break;
-        case "sceneName":
+
+        case WorkflowStage.SCENE_CREATION:
             GodotState.currentScene = input;
             ProjectManager.execute(`create scene ${input}`);
-            addMessage("system", `Scene "${input}" created and selected.`);
             GodotState.nodesInScene[input] = [];
-            GodotState.awaitingInputFor = null;
+            addMessage("system", `Scene "${input}" created.`);
+            GodotState.stage = WorkflowStage.NODE_SETUP;
             break;
-        case "nodeName":
+
+        case WorkflowStage.NODE_SETUP:
             ProjectManager.execute(input);
             const matchAddNode = input.match(/add node (\w+) (\w+) to (\w+)/i);
             if (matchAddNode) {
@@ -342,25 +379,22 @@ function processInput(input) {
                 if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
                 GodotState.nodesInScene[scene].push({ name, type, script: null });
             }
-            GodotState.awaitingInputFor = null;
             break;
-        default:
-            ProjectManager.execute(input);
-            // handle other commands normally
-            const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
-            if (matchAddUI) {
-                const [_, type, name, scene] = matchAddUI;
-                if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
-                GodotState.nodesInScene[scene].push({ name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js" });
-            }
 
-            const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
-            if (matchAttachScript) {
-                const [_, scriptName, nodeName, scene] = matchAttachScript;
-                const nodes = GodotState.nodesInScene[scene] || [];
-                const node = nodes.find(n => n.name === nodeName);
-                if (node) node.script = scriptName;
-            }
+        case WorkflowStage.MENU_LAYOUT:
+            addMessage("system", "Menu layout stage not implemented yet.");
+            break;
+
+        case WorkflowStage.BUTTON_SETUP:
+            addMessage("system", "Button setup stage not implemented yet.");
+            break;
+
+        case WorkflowStage.SCENE_TRANSITION:
+            addMessage("system", "Scene transition stage not implemented yet.");
+            break;
+
+        case WorkflowStage.DONE:
+            ProjectManager.execute(input);
             break;
     }
 
@@ -370,10 +404,16 @@ function processInput(input) {
 }
 
 function getNextPrompt() {
-    if (!GodotState.gameName) return "What is the name of your game?";
-    if (!GodotState.concept) return `Please describe the concept of "${GodotState.gameName}".`;
-    if (!GodotState.currentScene) return "Let's create your first scene. What should it be called?";
-    return `Next, add nodes, attach scripts, add Android touch controls, or create a new scene in "${GodotState.currentScene}".`;
+    switch (GodotState.stage) {
+        case WorkflowStage.GAME_NAME: return "What is the name of your game?";
+        case WorkflowStage.CONCEPT: return `Please describe the concept of "${GodotState.gameName}".`;
+        case WorkflowStage.SCENE_CREATION: return "Let's create your first scene. What should it be called?";
+        case WorkflowStage.NODE_SETUP: return `Next, add nodes, attach scripts, or add Android touch controls in "${GodotState.currentScene}".`;
+        case WorkflowStage.MENU_LAYOUT: return "Define your menu layout.";
+        case WorkflowStage.BUTTON_SETUP: return "Add buttons and link them to scenes/actions.";
+        case WorkflowStage.SCENE_TRANSITION: return "Define scene transitions.";
+        case WorkflowStage.DONE: return "Workflow complete. You may export your project.";
+    }
 }
 
 // ------------------------------
