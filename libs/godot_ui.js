@@ -1,6 +1,6 @@
 // libs/godot_ui.js
 // Author: CCVO
-// Purpose: DOM and UI handling, intent-aware buttons integrated with NLPProcessor
+// Purpose: DOM and UI handling with intent-based suggestions
 
 const chatLog = document.getElementById("nlp-log");
 const chatInput = document.getElementById("nlp-command");
@@ -14,7 +14,7 @@ if (!suggestionContainer) {
 }
 
 // ------------------------------
-// Chat / Info Helpers
+// Message display
 // ------------------------------
 function addMessage(sender, message) {
     const msgDiv = document.createElement("div");
@@ -24,51 +24,40 @@ function addMessage(sender, message) {
     chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+// ------------------------------
+// Info panel
+// ------------------------------
 function updateInfoPanel() {
     infoPanel.innerHTML = "";
 
-    if (GodotState.currentScene) {
-        infoPanel.innerHTML += `<strong>Scene:</strong> ${GodotState.currentScene}<br>`;
-    }
-
+    if (GodotState.currentScene) infoPanel.innerHTML += `<strong>Scene:</strong> ${GodotState.currentScene}<br>`;
     infoPanel.innerHTML += `<strong>Game:</strong> ${GodotState.gameName || "(unnamed)"}<br>`;
     infoPanel.innerHTML += `<strong>Concept:</strong> ${GodotState.concept || "(unset)"}<br>`;
 
-    if (GodotState.currentScene) {
-        const nodes = GodotState.nodesInScene?.[GodotState.currentScene] || [];
-        if (nodes.length > 0) {
-            const ul = document.createElement("ul");
-            nodes.forEach(node => {
-                const li = document.createElement("li");
-                li.innerText = `${node.name} (${node.type})`;
-                ul.appendChild(li);
-            });
-            infoPanel.appendChild(ul);
-        } else {
-            infoPanel.innerHTML += "<em>No nodes in this scene yet.</em>";
-        }
+    if (GodotState.nodesInScene?.[GodotState.currentScene]?.length) {
+        infoPanel.innerHTML += `<strong>Nodes:</strong> ${GodotState.nodesInScene[GodotState.currentScene]
+            .map(n => `${n.name} (${n.type})`)
+            .join(", ")}<br>`;
     }
 }
 
 // ------------------------------
-// Suggestion Buttons (Intent-Aware)
+// Suggestions
 // ------------------------------
 const NodeTypeSuggestions = {
     singleton: ["Player", "Camera"],
-    multi: ["Button", "Label"]
+    multi: ["Button", "Label"],
+    defaultPostNode: ["Add Another Node", "Create New Scene", "Export Project"]
 };
 
 function updateSuggestions() {
     suggestionContainer.innerHTML = "";
     let suggestions = [];
 
-    if (!GodotState.gameName) {
-        suggestions = ["Set Game Name"];
-    } else if (!GodotState.concept) {
-        suggestions = ["Set Concept"];
-    } else if (!GodotState.currentScene) {
-        suggestions = ["Create Scene"];
-    } else {
+    if (!GodotState.gameName) suggestions = ["Set Game Name"];
+    else if (!GodotState.concept) suggestions = ["Set Concept"];
+    else if (!GodotState.currentScene) suggestions = ["Create Scene"];
+    else {
         const existingNodes = GodotState.nodesInScene?.[GodotState.currentScene] || [];
         const existingTypes = existingNodes.map(n => n.type);
 
@@ -76,50 +65,23 @@ function updateSuggestions() {
             if (!existingTypes.includes(type)) suggestions.push(`Add ${type}`);
         });
 
-        NodeTypeSuggestions.multi.forEach(type => {
-            suggestions.push(`Add ${type}`);
-        });
-
-        suggestions.push("Add Another Node", "Create New Scene", "Export Project");
+        NodeTypeSuggestions.multi.forEach(type => suggestions.push(`Add ${type}`));
+        suggestions.push(...NodeTypeSuggestions.defaultPostNode);
     }
 
     suggestions.forEach(addSuggestionButton);
 }
 
-// ------------------------------
-// Button wiring to NLPProcessor
-// ------------------------------
 function addSuggestionButton(text) {
     const btn = document.createElement("button");
     btn.className = "suggestion-btn";
     btn.innerText = text;
 
-    btn.onclick = async () => {
-        if (window.NLPProcessor && typeof window.NLPProcessor.handleIntent === "function") {
-            // Map buttons to NLP intents
-            if (text.startsWith("Add ")) {
-                const nodeType = text.slice(4);
-                // Auto-add node command for current scene
-                if (GodotState.currentScene) {
-                    await ProjectManager.execute(`add node ${nodeType} ${nodeType} to ${GodotState.currentScene}`);
-                    GodotState.nodesInScene ??= {};
-                    GodotState.nodesInScene[GodotState.currentScene] ??= [];
-                    GodotState.nodesInScene[GodotState.currentScene].push({
-                        name: nodeType,
-                        type: nodeType,
-                        script: null
-                    });
-                    addMessage("system", `Node "${nodeType}" added to scene "${GodotState.currentScene}".`);
-                    updateInfoPanel();
-                    updateSuggestions();
-                    return;
-                }
-            }
-
-            // Fallback to intent handler
+    btn.onclick = () => {
+        if (typeof window.handleSuggestionClick === "function") {
             window.handleSuggestionClick(text);
         } else {
-            console.error("handleSuggestionClick / NLPProcessor not defined");
+            console.error("handleSuggestionClick not defined");
         }
     };
 
@@ -127,14 +89,8 @@ function addSuggestionButton(text) {
 }
 
 // ------------------------------
-// Global Exports
+// Expose
 // ------------------------------
 window.addMessage = addMessage;
 window.updateInfoPanel = updateInfoPanel;
 window.updateSuggestions = updateSuggestions;
-
-// ------------------------------
-// Initialize
-// ------------------------------
-updateInfoPanel();
-updateSuggestions();
