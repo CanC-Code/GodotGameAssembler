@@ -8,8 +8,6 @@ class NLPProcessor {
         this.chatInput = chatInput;
         this.addMessage = addMessageCallback;
 
-        // ---- CRITICAL FIX ----
-        // Ensure workflow state always exists
         if (!this.state.workflowStage) {
             this.state.workflowStage = "INIT";
         }
@@ -43,7 +41,6 @@ class NLPProcessor {
                 break;
 
             default:
-                // Defensive recovery instead of dead-end
                 console.warn("Unknown workflow stage:", this.state.workflowStage);
                 this.state.workflowStage = "INIT";
                 this.addMessage(
@@ -123,6 +120,14 @@ class NLPProcessor {
 window.NLPProcessor = NLPProcessor;
 
 const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
+
+// ✅ THIS IS THE MISSING PIECE
+window.handleSuggestionClick = function (text) {
+    chatInput.value = "";
+    nlpProcessor.process(text);
+    updateInfoPanel();
+    updateSuggestions();
+};
 
 // SINGLE authoritative Enter handler
 chatInput.addEventListener("keydown", e => {
