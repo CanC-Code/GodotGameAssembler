@@ -1,6 +1,6 @@
 // godot.js
 // Author: CCVO
-// Purpose: Dynamic guidance with Android touch UI and touch layout editor (fully integrated with ProjectGraph)
+// Purpose: Dynamic guidance with Android touch UI and touch layout editor
 
 // ------------------------------
 // Global State
@@ -19,12 +19,16 @@ const GodotState = {
 const chatLog = document.getElementById("nlp-log");
 const chatInput = document.getElementById("nlp-command");
 const infoPanel = document.getElementById("file-info");
+
 let suggestionContainer = document.getElementById("suggestions");
 if (!suggestionContainer) {
     suggestionContainer = document.createElement("div");
     suggestionContainer.id = "suggestions";
     chatLog.parentNode.insertBefore(suggestionContainer, chatLog.nextSibling);
 }
+
+const touchEditor = document.getElementById("touch-editor");
+const editorCanvas = document.getElementById("editor-canvas");
 
 // ------------------------------
 // Helper Functions
@@ -48,11 +52,8 @@ function updateInfoPanel() {
         if (nodes.length > 0) {
             const nodeList = document.createElement("ul");
             nodes.forEach(node => {
-                const posText = node.touchPosition
-                    ? ` → Touch: x=${node.touchPosition.x.toFixed(2)}, y=${node.touchPosition.y.toFixed(2)}`
-                    : "";
                 const nodeItem = document.createElement("li");
-                nodeItem.innerText = `${node.name} (${node.type})${node.script ? ` → Script: ${node.script}` : ""}${posText}`;
+                nodeItem.innerText = `${node.name} (${node.type})${node.script ? ` → Script: ${node.script}` : ""}`;
                 nodeList.appendChild(nodeItem);
             });
             infoPanel.appendChild(nodeList);
@@ -121,19 +122,43 @@ function addSuggestionButton(text) {
 function handleSuggestionClick(action) {
     switch (action) {
         case "Set Game Name":
+        case "Set Concept":
+        case "Create Scene":
+        case "Add Another Node":
+        case "Attach Script":
+        case "Attach Movement Script":
+        case "Assign Jump Script":
+        case "Assign Interact Script":
+        case "Add Camera":
+        case "Add UI":
+        case "Set Spawn Position":
+        case "Add Android Controls":
+        case "Edit Android Touch Layout":
+        case "Link to Scene":
+        case "Create New Scene":
+        case "Export Project":
+            processSuggestionAction(action);
+            break;
+        default:
             chatInput.focus();
+            addMessage("system", `Type command for: ${action}`);
+            break;
+    }
+}
+
+function processSuggestionAction(action) {
+    chatInput.focus();
+    switch (action) {
+        case "Set Game Name":
             addMessage("system", "Please type the name of your game in the input box.");
             break;
         case "Set Concept":
-            chatInput.focus();
             addMessage("system", "Please describe your game concept in the input box.");
             break;
         case "Create Scene":
-            chatInput.focus();
             addMessage("system", "Type the name of your new scene.");
             break;
         case "Add Another Node":
-            chatInput.focus();
             addMessage("system", "Type: add node <NodeName> <Type> to <SceneName>");
             break;
         case "Attach Script":
@@ -144,16 +169,13 @@ function handleSuggestionClick(action) {
             break;
         case "Add Camera":
             chatInput.value = `add node MainCamera Camera to ${GodotState.currentScene}`;
-            chatInput.focus();
             addMessage("system", "Auto-filled camera addition. Press Enter to execute.");
             break;
         case "Add UI":
             chatInput.value = `add node StartButton Button to ${GodotState.currentScene}`;
-            chatInput.focus();
-            addMessage("system", "Auto-filled UI node addition. Press Enter.");
+            addMessage("system", "Auto-filled UI node addition. Press Enter to execute.");
             break;
         case "Set Spawn Position":
-            chatInput.focus();
             addMessage("system", `Use: set position 0 1 0 for ${GodotState.lastNodeAdded}`);
             break;
         case "Add Android Controls":
@@ -163,20 +185,14 @@ function handleSuggestionClick(action) {
             openTouchEditor();
             break;
         case "Link to Scene":
-            chatInput.focus();
             addMessage("system", `Use: link button <ButtonName> to scene <SceneName>`);
             break;
         case "Create New Scene":
-            chatInput.focus();
             addMessage("system", "Type the name of the new scene you want to create.");
             break;
         case "Export Project":
             ProjectManager.execute(`export project ${GodotState.gameName || "MyGame"}`);
             addMessage("system", `Project exported as "${GodotState.gameName || "MyGame"}".`);
-            break;
-        default:
-            chatInput.focus();
-            addMessage("system", `Type command for: ${action}`);
             break;
     }
 }
@@ -194,7 +210,6 @@ function attachScriptToLastNode(action) {
         default: scriptName = `${GodotState.lastNodeAdded.toLowerCase()}_script.js`; break;
     }
     chatInput.value = `attach script ${scriptName} to ${GodotState.lastNodeAdded} in ${GodotState.currentScene}`;
-    chatInput.focus();
     addMessage("system", `Auto-filled script command. Press Enter to execute.`);
 }
 
@@ -209,18 +224,15 @@ function suggestAndroidControls() {
     const interactButtonName = "InteractButton";
 
     chatInput.value = `add thumbstick ${thumbstickName} to ${GodotState.currentScene}`;
-    chatInput.focus();
     addMessage("system", `Auto-filled: Add movement thumbstick. Press Enter.`);
 
     setTimeout(() => {
         chatInput.value = `add button ${jumpButtonName} to ${GodotState.currentScene}`;
-        chatInput.focus();
         addMessage("system", `Auto-filled: Add jump button. Press Enter.`);
     }, 500);
 
     setTimeout(() => {
         chatInput.value = `add button ${interactButtonName} to ${GodotState.currentScene}`;
-        chatInput.focus();
         addMessage("system", `Auto-filled: Add interact button. Press Enter.`);
     }, 1000);
 }
@@ -234,54 +246,54 @@ function openTouchEditor() {
         return;
     }
 
-    const editor = document.getElementById("touch-editor");
-    const canvas = document.getElementById("editor-canvas");
-    canvas.innerHTML = "";
-
+    editorCanvas.innerHTML = "";
     const nodes = GodotState.nodesInScene[GodotState.currentScene] || [];
     const touchNodes = nodes.filter(n => n.type === "thumbstick" || n.type === "button");
 
     touchNodes.forEach(node => {
         const el = document.createElement("div");
-        el.className = "touch-node";
+        el.className = `touch-node ${node.type}`; // <-- Apply CSS class dynamically
         el.dataset.name = node.name;
-        el.style.position = "absolute";
-        el.style.width = "60px";
-        el.style.height = "60px";
-        el.style.background = node.type === "thumbstick" ? "rgba(0,150,255,0.5)" : "rgba(0,255,100,0.5)";
-        el.style.borderRadius = node.type === "thumbstick" ? "50%" : "10%";
-        el.style.cursor = "grab";
 
         const xPct = node.touchPosition?.x || 0.1;
         const yPct = node.touchPosition?.y || 0.8;
-        el.style.left = `${xPct * canvas.clientWidth}px`;
-        el.style.top = `${yPct * canvas.clientHeight}px`;
 
-        canvas.appendChild(el);
-        makeDraggable(el, canvas, node);
+        el.style.position = "absolute";
+        el.style.left = `${xPct * editorCanvas.clientWidth}px`;
+        el.style.top = `${yPct * editorCanvas.clientHeight}px`;
+        el.style.width = "60px";
+        el.style.height = "60px";
+        el.style.cursor = "grab";
+
+        editorCanvas.appendChild(el);
+        makeDraggable(el, editorCanvas, node);
     });
 
-    editor.style.display = "block";
+    touchEditor.style.display = "flex";
 }
 
 // ------------------------------
-// Draggable logic with ProjectGraph sync
+// Draggable logic (mouse + touch)
 // ------------------------------
 function makeDraggable(el, container, node) {
-    let offsetX, offsetY, dragging = false;
+    let offsetX = 0, offsetY = 0, dragging = false;
 
     function pointerDown(e) {
         e.preventDefault();
         dragging = true;
         const rect = el.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
+        offsetX = (e.clientX || e.touches?.[0].clientX) - rect.left;
+        offsetY = (e.clientY || e.touches?.[0].clientY) - rect.top;
     }
 
     function pointerMove(e) {
         if (!dragging) return;
-        let x = e.clientX - container.getBoundingClientRect().left - offsetX;
-        let y = e.clientY - container.getBoundingClientRect().top - offsetY;
+        const clientX = e.clientX || e.touches?.[0].clientX;
+        const clientY = e.clientY || e.touches?.[0].clientY;
+        if (clientX === undefined || clientY === undefined) return;
+
+        let x = clientX - container.getBoundingClientRect().left - offsetX;
+        let y = clientY - container.getBoundingClientRect().top - offsetY;
 
         x = Math.max(0, Math.min(container.clientWidth - el.clientWidth, x));
         y = Math.max(0, Math.min(container.clientHeight - el.clientHeight, y));
@@ -293,13 +305,6 @@ function makeDraggable(el, container, node) {
             x: x / container.clientWidth,
             y: y / container.clientHeight
         };
-
-        // Update ProjectGraph immediately
-        if (window.ProjectGraph) {
-            ProjectGraph.setNodeTouchPosition(GodotState.currentScene, node.name, node.touchPosition);
-        }
-
-        updateInfoPanel();
     }
 
     function pointerUp() { dragging = false; }
@@ -308,8 +313,8 @@ function makeDraggable(el, container, node) {
     document.addEventListener("mousemove", pointerMove);
     document.addEventListener("mouseup", pointerUp);
 
-    el.addEventListener("touchstart", e => pointerDown(e.touches[0]));
-    document.addEventListener("touchmove", e => pointerMove(e.touches[0]));
+    el.addEventListener("touchstart", pointerDown);
+    document.addEventListener("touchmove", pointerMove);
     document.addEventListener("touchend", pointerUp);
 }
 
@@ -317,10 +322,10 @@ function makeDraggable(el, container, node) {
 // Editor Buttons
 // ------------------------------
 document.getElementById("close-editor").addEventListener("click", () => {
-    document.getElementById("touch-editor").style.display = "none";
+    touchEditor.style.display = "none";
 });
 document.getElementById("save-editor").addEventListener("click", () => {
-    document.getElementById("touch-editor").style.display = "none";
+    touchEditor.style.display = "none";
     addMessage("system", "Touch layout saved for this scene.");
 });
 
@@ -353,26 +358,17 @@ function processInput(input) {
             GodotState.lastNodeAdded = name;
             if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
             GodotState.nodesInScene[scene].push({ name, type, script: null });
-
-            // Also add to ProjectGraph
-            if (window.ProjectGraph) {
-                ProjectGraph.addNode(scene, name, type);
-            }
         }
 
         const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
         if (matchAddUI) {
             const [_, type, name, scene] = matchAddUI;
             if (!GodotState.nodesInScene[scene]) GodotState.nodesInScene[scene] = [];
-            const nodeObj = { name, type, script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js", touchPosition: null };
-            GodotState.nodesInScene[scene].push(nodeObj);
-
-            // Add to ProjectGraph with initial touchPosition null
-            if (window.ProjectGraph) {
-                ProjectGraph.addNode(scene, name, type, null, null);
-            }
-
-            GodotState.lastNodeAdded = name;
+            GodotState.nodesInScene[scene].push({
+                name,
+                type,
+                script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js"
+            });
         }
 
         const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
@@ -381,11 +377,6 @@ function processInput(input) {
             const nodes = GodotState.nodesInScene[scene] || [];
             const node = nodes.find(n => n.name === nodeName);
             if (node) node.script = scriptName;
-
-            // Sync with ProjectGraph
-            if (window.ProjectGraph) {
-                ProjectGraph.attachScript(scene, nodeName, scriptName);
-            }
         }
     }
 
