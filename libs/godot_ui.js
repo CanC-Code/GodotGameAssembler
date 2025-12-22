@@ -1,6 +1,6 @@
 // libs/godot_ui.js
 // Author: CCVO
-// Purpose: DOM and UI handling
+// Purpose: DOM and UI handling, NLP-integrated
 
 const chatLog = document.getElementById("nlp-log");
 const chatInput = document.getElementById("nlp-command");
@@ -13,6 +13,9 @@ if (!suggestionContainer) {
     chatLog.parentNode.insertBefore(suggestionContainer, chatLog.nextSibling);
 }
 
+// ------------------------------
+// Chat / Info Helpers
+// ------------------------------
 function addMessage(sender, message) {
     const msgDiv = document.createElement("div");
     msgDiv.className = sender;
@@ -33,9 +36,8 @@ function updateInfoPanel() {
 }
 
 // ------------------------------
-// Suggestion Logic (INTENT-BASED)
+// Suggestion Buttons (Intent-Aware)
 // ------------------------------
-
 const NodeTypeSuggestions = {
     default: ["Add Player", "Add Camera", "Add Button"],
     defaultPostNode: ["Add Another Node", "Create New Scene", "Export Project"]
@@ -74,7 +76,15 @@ function addSuggestionButton(text) {
     suggestionContainer.appendChild(btn);
 }
 
-// Expose globals
+// ------------------------------
+// Global Exports
+// ------------------------------
 window.addMessage = addMessage;
 window.updateInfoPanel = updateInfoPanel;
 window.updateSuggestions = updateSuggestions;
+
+// ------------------------------
+// Initialize
+// ------------------------------
+updateInfoPanel();
+updateSuggestions();
