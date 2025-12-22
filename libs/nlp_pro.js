@@ -1,133 +1,162 @@
-// libs/nlp_pro.js
+// nlp_pro.js
 // Author: CCVO
-// Purpose: Enhanced NLP command interpreter for chat-driven Godot project building
+// Purpose: Context-aware NLP interface for GodotGameAssembler
 
-(function () {
+// ------------------------------
+// NLP Command Processor
+// ------------------------------
+class NLPProcessor {
+    constructor(state, chatInput, addMessageCallback) {
+        this.state = state;
+        this.chatInput = chatInput;
+        this.addMessage = addMessageCallback;
+    }
 
-    const NLP_PRO = {
+    process(input) {
+        input = input.trim();
+        if (!input) return;
 
-        async process(input, pm) {
-            if (!pm) throw new Error("ProjectManager not provided to NLP");
+        this.addMessage("user", input);
 
-            const text = input.trim();
+        // Stage-aware interpretation
+        switch (this.state.workflowStage) {
+            case "INIT":
+                this.state.gameName = input;
+                this.state.workflowStage = "CONCEPT";
+                this.addMessage("system", `Game named "${this.state.gameName}".`);
+                break;
 
-            // -----------------------------
-            // HELP
-            // -----------------------------
-            if (/^help/i.test(text)) {
-                return `Commands:
-- name game "<Name>"
-- set concept "<Text>"
-- create scene <Name>
-- add node <Name> <Type> to <Scene>
-- attach script <Script> to <Node> in <Scene>
-- add button <Name> to <Scene> [position]
-- link button <Name> to scene <Scene>
-- add thumbstick to <Scene>
-- list scenes
-- export project <Name>`;
-            }
+            case "CONCEPT":
+                this.state.concept = input;
+                this.state.workflowStage = "SCENE";
+                this.addMessage("system", `Concept set: "${this.state.concept}".`);
+                break;
 
-            // -----------------------------
-            // NAME GAME
-            // -----------------------------
-            let m = text.match(/^name\s+game\s+"(.+)"$/i);
-            if (m) {
-                pm.gameName = m[1];
-                return `Game named: ${pm.gameName}`;
-            }
+            case "SCENE":
+                // Allow free-form: "create scene Level1" or just "Level1"
+                const sceneMatch = input.match(/(?:create\s+scene\s+)?(\w+)/i);
+                if (sceneMatch) {
+                    const sceneName = sceneMatch[1];
+                    this.state.currentScene = sceneName;
+                    ProjectManager.execute(`create scene ${sceneName}`);
+                    this.state.nodesInScene[sceneName] = [];
+                    this.state.workflowStage = "NODE";
+                    this.addMessage("system", `Scene "${sceneName}" created and selected.`);
+                } else {
+                    this.addMessage("system", "Could not identify scene name. Try again.");
+                }
+                break;
 
-            // -----------------------------
-            // SET CONCEPT
-            // -----------------------------
-            m = text.match(/^set\s+concept\s+"(.+)"$/i);
-            if (m) {
-                pm.gameConcept = m[1];
-                return `Game concept set: ${pm.gameConcept}`;
-            }
+            case "NODE":
+                this.handleNodeInput(input);
+                break;
 
-            // -----------------------------
-            // CREATE SCENE
-            // -----------------------------
-            m = text.match(/^create\s+scene\s+(\w+)/i);
-            if (m) {
-                const name = m[1];
-                const res = pm.add_scene(name);
-                return res.includes("created") ? `Scene '${name}' created` : res;
-            }
+            case "MENU_LAYOUT":
+                this.handleMenuInput(input);
+                break;
 
-            // -----------------------------
-            // ADD NODE
-            // -----------------------------
-            m = text.match(/^add\s+node\s+(\w+)\s+(\w+)\s+to\s+(\w+)/i);
-            if (m) {
-                const [, node, type, scene] = m;
-                return pm.add_node(scene, node, type);
-            }
+            case "BUTTON_SETUP":
+                this.handleButtonInput(input);
+                break;
 
-            // -----------------------------
-            // ATTACH SCRIPT
-            // -----------------------------
-            m = text.match(/^attach\s+script\s+(\w+)\s+to\s+(\w+)\s+in\s+(\w+)/i);
-            if (m) {
-                const [, script, node, scene] = m;
-                return pm.attach_script(scene, node, script);
-            }
+            case "SCENE_TRANSITION":
+                this.handleSceneTransitionInput(input);
+                break;
 
-            // -----------------------------
-            // ADD BUTTON
-            // -----------------------------
-            m = text.match(/^add\s+button\s+"?(\w+)"?\s+to\s+(\w+)(?:\s+(\w+))?/i);
-            if (m) {
-                const [, name, scene, position] = m;
-                return pm.addUIElement(scene, name, "Button", position);
-            }
+            case "DONE":
+                this.addMessage("system", "Project is complete. You can export it now.");
+                break;
 
-            // -----------------------------
-            // LINK BUTTON TO SCENE
-            // -----------------------------
-            m = text.match(/^link\s+button\s+"?(\w+)"?\s+to\s+scene\s+(\w+)/i);
-            if (m) {
-                const [, btnName, targetScene] = m;
-                return pm.linkButtonToScene(btnName, targetScene);
-            }
+            default:
+                this.addMessage("system", "Unrecognized stage. Type 'help' for commands.");
+        }
+    }
 
-            // -----------------------------
-            // ADD THUMBSTICK
-            // -----------------------------
-            m = text.match(/^add\s+thumbstick\s+to\s+(\w+)/i);
-            if (m) {
-                const [, scene] = m;
-                return pm.createThumbstick(scene);
-            }
+    // ------------------------------
+    // Node creation / scripts
+    // ------------------------------
+    handleNodeInput(input) {
+        // Free-form: "add player", "add camera", etc.
+        const lower = input.toLowerCase();
 
-            // -----------------------------
-            // LIST SCENES
-            // -----------------------------
-            if (/^list\s+scenes/i.test(text)) {
-                const scenes = pm.get_scenes();
-                return scenes.length ? "Scenes:\n- " + scenes.join("\n- ") : "No scenes created.";
-            }
+        let nodeName = null;
+        let nodeType = null;
 
-            // -----------------------------
-            // EXPORT PROJECT
-            // -----------------------------
-            m = text.match(/^export\s+project(?:\s+(\w+))?/i);
-            if (m) {
-                const name = m[1] || "GodotProject";
-                await pm.generate_project(name);
-                return `Project '${name}' exported.`;
-            }
-
-            // -----------------------------
-            // FALLBACK
-            // -----------------------------
-            return "Unrecognized command. Type 'help'.";
+        if (lower.includes("player")) {
+            nodeName = "Player";
+            nodeType = "KinematicBody";
+        } else if (lower.includes("camera")) {
+            nodeName = "MainCamera";
+            nodeType = "Camera";
+        } else if (lower.includes("button")) {
+            nodeName = "Button1";
+            nodeType = "Button";
+        } else if (lower.includes("label")) {
+            nodeName = "Label1";
+            nodeType = "Label";
+        } else if (lower.includes("light")) {
+            nodeName = "Light1";
+            nodeType = "Light";
         }
 
-    };
+        if (nodeName && nodeType) {
+            this.state.lastNodeAdded = nodeName;
+            if (!this.state.nodesInScene[this.state.currentScene]) this.state.nodesInScene[this.state.currentScene] = [];
+            this.state.nodesInScene[this.state.currentScene].push({ name: nodeName, type: nodeType, script: null });
+            ProjectManager.execute(`add node ${nodeName} ${nodeType} to ${this.state.currentScene}`);
+            this.addMessage("system", `Node "${nodeName}" of type "${nodeType}" added to scene "${this.state.currentScene}".`);
+        } else if (lower.includes("add thumbstick") || lower.includes("add jump button") || lower.includes("add interact button")) {
+            // Android controls
+            ProjectManager.execute(input);
+            this.addMessage("system", `Control added: ${input}`);
+        } else {
+            this.addMessage("system", `Unrecognized node command: "${input}". Try "add player" or "add camera".`);
+        }
+    }
 
-    window.NLP_PRO = NLP_PRO;
-    console.log("NLP_PRO loaded.");
+    // ------------------------------
+    // Menu / layout handler
+    // ------------------------------
+    handleMenuInput(input) {
+        // e.g., "add main menu", "add start button"
+        ProjectManager.execute(input);
+        this.addMessage("system", `Menu/layout action executed: "${input}".`);
+    }
 
-})();
+    // ------------------------------
+    // Button handler
+    // ------------------------------
+    handleButtonInput(input) {
+        // e.g., "link button StartButton to scene Level2"
+        ProjectManager.execute(input);
+        this.addMessage("system", `Button action executed: "${input}".`);
+    }
+
+    // ------------------------------
+    // Scene transition handler
+    // ------------------------------
+    handleSceneTransitionInput(input) {
+        ProjectManager.execute(input);
+        this.addMessage("system", `Scene transition action executed: "${input}".`);
+    }
+}
+
+// ------------------------------
+// Integration
+// ------------------------------
+window.NLPProcessor = NLPProcessor;
+
+// Usage in godot.js context:
+const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
+
+// Hook to chat input
+chatInput.addEventListener("keydown", e => {
+    if (e.key === "Enter") {
+        nlpProcessor.process(chatInput.value);
+        chatInput.value = "";
+        updateInfoPanel();
+        updateSuggestions();
+    }
+});
+
+console.log("nlp_pro.js loaded: context-aware NLP processor active.");
