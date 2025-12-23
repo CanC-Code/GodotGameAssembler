@@ -1,39 +1,38 @@
 // libs/nlp_pro.js
 // Author: CCVO
-// Purpose: Intent-aware NLP controller with conversational creation
+// Purpose: Intent-aware NLP controller (human-first)
 
 class NLPProcessor {
     constructor(state, chatInput, addMessage) {
         this.state = state;
         this.chatInput = chatInput;
         this.addMessage = addMessage;
+
+        this.state.workflowStage ??= "INIT";
+        this.state.awaitingAnswerFor ??= null;
+        this.state.pendingPlayer ??= null; // temporary store for interactive player creation
     }
 
     // ------------------------------
     // Button intent handler
     // ------------------------------
     handleIntent(intent) {
-        const intentMap = {
-            "Set Game Name": () => this.ask("GAME_NAME", "What is the name of your game?"),
-            "Set Concept": () => this.ask("CONCEPT", "Describe the game concept."),
-            "Create Scene": () => this.ask("SCENE_NAME", "What should the scene be called?"),
-            "Add Player": () => this.startPlayerCreation(),
-            "Create Touch Controller": () => this.createTouchController()
+        const prompts = {
+            "Set Game Name": ["GAME_NAME", "What is the name of your game?"],
+            "Set Concept": ["CONCEPT", "Describe the game concept."],
+            "Create Scene": ["SCENE_NAME", "What should the scene be called?"],
+            "Add Player": ["PLAYER", "Creating a new player. What should its name be?"]
         };
 
-        if (intentMap[intent]) intentMap[intent]();
-    }
+        if (!prompts[intent]) return;
 
-    ask(slot, question) {
-        this.state.creationContext = {
-            type: "ANSWER",
-            slot
-        };
-        this.addMessage("system", question);
+        const [slot, prompt] = prompts[intent];
+        this.state.awaitingAnswerFor = slot;
+        this.addMessage("system", prompt);
     }
 
     // ------------------------------
-    // Main processor
+    // Main text processor
     // ------------------------------
     async process(input) {
         input = input.trim();
@@ -41,152 +40,136 @@ class NLPProcessor {
 
         this.addMessage("user", input);
 
-        // 1️⃣ Awaiting structured answer
-        if (this.state.creationContext) {
-            await this.consumeContext(input);
+        // 1️⃣ Explicit answer to a question
+        if (this.state.awaitingAnswerFor) {
+            await this.consumeAnswer(input);
             return;
         }
 
         // 2️⃣ Explicit command
         if (this.looksLikeCommand(input)) {
-            const result = await ProjectManager.execute(input);
-            if (result) this.addMessage("system", result);
+            const result = await ProjectManager.process_nlp_command(input);
+            this.addMessage("system", result);
             this.refresh();
             return;
         }
 
         // 3️⃣ Implicit intent
-        await this.inferIntent(input);
+        await this.inferImplicitIntent(input);
     }
 
     // ------------------------------
-    // Context consumer
+    // Consume prompted answers
     // ------------------------------
-    async consumeContext(input) {
-        const ctx = this.state.creationContext;
+    async consumeAnswer(text) {
+        switch (this.state.awaitingAnswerFor) {
+            case "GAME_NAME":
+                this.state.gameName = text;
+                this.addMessage("system", `Game named "${text}".`);
+                break;
 
-        // Basic answers
-        if (ctx.type === "ANSWER") {
-            if (ctx.slot === "GAME_NAME") {
-                this.state.gameName = input;
-                this.addMessage("system", `Game named "${input}".`);
-            }
+            case "CONCEPT":
+                this.state.concept = text;
+                this.addMessage("system", `Concept set: "${text}".`);
+                break;
 
-            if (ctx.slot === "CONCEPT") {
-                this.state.concept = input;
-                this.addMessage("system", `Concept set: "${input}".`);
-            }
+            case "SCENE_NAME":
+                this.state.currentScene = text;
+                await ProjectManager.process_nlp_command(`create scene ${text}`);
+                this.addMessage("system", `Scene "${text}" created.`);
+                break;
 
-            if (ctx.slot === "SCENE_NAME") {
-                this.state.currentScene = input;
-                await ProjectManager.execute(`create scene ${input}`);
-                this.state.nodesInScene[input] = [];
-                this.addMessage("system", `Scene "${input}" created.`);
-            }
-
-            this.state.creationContext = null;
-            this.refresh();
-            return;
-        }
-
-        // Player creation flow
-        if (ctx.type === "CREATE_PLAYER") {
-            if (ctx.step === "NAME") {
-                ctx.data.name = input;
-                ctx.step = "CONTROLLER";
+            case "PLAYER":
+                this.state.pendingPlayer = { name: text };
+                this.state.awaitingAnswerFor = "PLAYER_CONTROLLER";
                 this.addMessage(
                     "system",
-                    "Should this player use an existing controller or create a new one?"
+                    `Should player "${text}" use an existing controller or create a new one? (type 'new' or the controller name)`
                 );
-                return;
-            }
+                return; // exit to wait for controller input
 
-            if (ctx.step === "CONTROLLER") {
-                let controllerId;
-
-                if (/touch/i.test(input)) {
-                    controllerId = `touch_${Date.now()}`;
-                    this.state.createController(controllerId, "touch");
-                    this.addMessage("system", "Touch controller created. Opening editor.");
-                    window.openTouchEditor();
-                } else {
-                    controllerId = "keyboard_default";
-                    this.state.createController(controllerId, "keyboard");
-                }
-
-                // Create player node
-                const node = {
-                    name: ctx.data.name,
-                    type: "Player",
-                    controller: controllerId
-                };
-
-                this.state.nodesInScene[this.state.currentScene].push(node);
-                this.state.lastNodeAdded = node.name;
-
-                this.addMessage(
-                    "system",
-                    `Player "${node.name}" added using controller "${controllerId}".`
-                );
-
-                this.state.creationContext = null;
-                this.refresh();
-            }
-        }
-    }
-
-    // ------------------------------
-    // Intent inference
-    // ------------------------------
-    async inferIntent(input) {
-        const lower = input.toLowerCase();
-
-        if (!this.state.gameName) {
-            this.ask("GAME_NAME", "What is the name of your game?");
-            return;
+            case "PLAYER_CONTROLLER":
+                await this.assignController(text);
+                break;
         }
 
-        if (!this.state.concept) {
-            this.ask("CONCEPT", "Describe the game concept.");
-            return;
-        }
-
-        if (!this.state.currentScene) {
-            this.ask("SCENE_NAME", "What should the first scene be called?");
-            return;
-        }
-
-        if (lower === "player") {
-            this.startPlayerCreation();
-            return;
-        }
-
-        this.addMessage(
-            "system",
-            `I didn’t understand "${input}". Try "player", "add button", or use the suggestions.`
-        );
-    }
-
-    // ------------------------------
-    // Creation starters
-    // ------------------------------
-    startPlayerCreation() {
-        this.state.creationContext = {
-            type: "CREATE_PLAYER",
-            step: "NAME",
-            data: {}
-        };
-        this.addMessage("system", "Creating a Player. What should its name be?");
-    }
-
-    createTouchController() {
-        const id = `touch_${Date.now()}`;
-        this.state.createController(id, "touch");
-        this.addMessage("system", `Touch controller "${id}" created.`);
-        window.openTouchEditor();
+        this.state.awaitingAnswerFor = null;
         this.refresh();
     }
 
+    // ------------------------------
+    // Controller assignment
+    // ------------------------------
+    async assignController(input) {
+        const player = this.state.pendingPlayer;
+        if (!player) return;
+
+        if (input.toLowerCase() === "new") {
+            // Launch touch editor for creating a new controller
+            openTouchEditor(); 
+            player.controller = `custom_controller_${player.name}`;
+            this.addMessage("system", `Player "${player.name}" added. Use the touch editor to configure the controller.`);
+        } else {
+            // Assign existing controller
+            player.controller = input;
+            this.addMessage("system", `Player "${player.name}" added using controller "${input}".`);
+        }
+
+        // Add player to ProjectManager / current scene
+        if (this.state.currentScene) {
+            const nodeName = player.name;
+            const sceneName = this.state.currentScene;
+            await ProjectManager.process_nlp_command(`add node ${nodeName} KinematicBody to ${sceneName}`);
+            if (!GodotState.nodesInScene[sceneName]) GodotState.nodesInScene[sceneName] = [];
+            GodotState.nodesInScene[sceneName].push({
+                name: nodeName,
+                type: "KinematicBody",
+                controller: player.controller
+            });
+        }
+
+        this.state.pendingPlayer = null;
+    }
+
+    // ------------------------------
+    // Implicit intent inference
+    // ------------------------------
+    async inferImplicitIntent(text) {
+        const lower = text.toLowerCase();
+
+        if (!this.state.gameName) {
+            this.state.awaitingAnswerFor = "GAME_NAME";
+            await this.consumeAnswer(text);
+        } else if (!this.state.concept) {
+            this.state.awaitingAnswerFor = "CONCEPT";
+            await this.consumeAnswer(text);
+        } else if (!this.state.currentScene) {
+            this.state.awaitingAnswerFor = "SCENE_NAME";
+            await this.consumeAnswer(text);
+        } else if (["player"].includes(lower)) {
+            this.state.awaitingAnswerFor = "PLAYER";
+            await this.consumeAnswer(text);
+        } else {
+            const nodeTypeMap = { camera: "Camera", button: "Button", label: "Label" };
+            if (nodeTypeMap[lower]) {
+                const nodeName = lower.charAt(0).toUpperCase() + lower.slice(1);
+                await ProjectManager.process_nlp_command(
+                    `add node ${nodeName} ${nodeTypeMap[lower]} to ${this.state.currentScene}`
+                );
+                this.addMessage("system", `Node "${nodeName}" added to scene "${this.state.currentScene}".`);
+            } else {
+                this.addMessage(
+                    "system",
+                    `I didn’t understand "${text}". Try "add player", "add camera", "add button", or use the suggestions.`
+                );
+            }
+        }
+
+        this.refresh();
+    }
+
+    // ------------------------------
+    // Helpers
     // ------------------------------
     looksLikeCommand(text) {
         return /^(create|add|set|attach|link|export|list|name)\b/i.test(text);
@@ -195,6 +178,7 @@ class NLPProcessor {
     refresh() {
         updateInfoPanel();
         updateSuggestions();
+        renderProjectTree();
     }
 }
 
@@ -203,8 +187,7 @@ class NLPProcessor {
 // ------------------------------
 const nlpProcessor = new NLPProcessor(GodotState, chatInput, addMessage);
 
-window.handleSuggestionClick = intent =>
-    nlpProcessor.handleIntent(intent);
+window.handleSuggestionClick = intent => nlpProcessor.handleIntent(intent);
 
 chatInput.addEventListener("keydown", e => {
     if (e.key === "Enter") {
@@ -214,4 +197,4 @@ chatInput.addEventListener("keydown", e => {
     }
 });
 
-console.log("NLP active: conversational, context-aware.");
+console.log("NLP active: async-safe, intent-aware, controller-interactive.");
