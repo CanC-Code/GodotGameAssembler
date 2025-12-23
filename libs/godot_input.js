@@ -1,6 +1,6 @@
 // libs/godot_input.js
 // Author: CCVO
-// Purpose: Input parsing helpers (NO event listeners)
+// Purpose: Input parsing + transactional object creation (NO silent defaults)
 
 // ------------------------------
 // Safe ProjectManager bridge
@@ -31,56 +31,48 @@ function processInput(input) {
 
     addMessage("user", input);
 
+    // ------------------------------
+    // Pending transactional actions
+    // ------------------------------
+    if (GodotState.pendingAction) {
+        handlePendingAction(input);
+        return;
+    }
+
+    // ------------------------------
+    // Initial project bootstrap
+    // ------------------------------
     if (!GodotState.gameName) {
         GodotState.gameName = input;
         addMessage("system", `Game named "${GodotState.gameName}".`);
-    } 
+    }
     else if (!GodotState.concept) {
         GodotState.concept = input;
         addMessage("system", `Concept set: "${GodotState.concept}".`);
-    } 
+    }
     else if (!GodotState.currentScene) {
-        const sceneName = input;
-        GodotState.currentScene = sceneName;
-
-        executeProjectCommand(`create scene ${sceneName}`);
-
-        GodotState.nodesInScene[sceneName] = [];
-        addMessage("system", `Scene "${sceneName}" created and selected.`);
-    } 
+        GodotState.currentScene = input;
+        GodotState.nodesInScene[input] = [];
+        executeProjectCommand(`create scene ${input}`);
+        addMessage("system", `Scene "${input}" created.`);
+    }
     else {
+        // ------------------------------
+        // Command parsing
+        // ------------------------------
+        const cmd = input.toLowerCase();
+
+        if (cmd === "player" || cmd === "add player" || cmd === "new player") {
+            GodotState.pendingAction = {
+                type: "create_player",
+                step: "ask_name"
+            };
+            addMessage("system", "Creating a Player. What should its name be?");
+            updateSuggestions([]);
+            return;
+        }
+
         executeProjectCommand(input);
-
-        const matchAddNode = input.match(/add node (\w+) (\w+) to (\w+)/i);
-        if (matchAddNode) {
-            const [, name, type, scene] = matchAddNode;
-            GodotState.lastNodeAdded = name;
-            if (!GodotState.nodesInScene[scene]) {
-                GodotState.nodesInScene[scene] = [];
-            }
-            GodotState.nodesInScene[scene].push({ name, type, script: null });
-        }
-
-        const matchAddUI = input.match(/add (thumbstick|button) (\w+) to (\w+)/i);
-        if (matchAddUI) {
-            const [, type, name, scene] = matchAddUI;
-            if (!GodotState.nodesInScene[scene]) {
-                GodotState.nodesInScene[scene] = [];
-            }
-            GodotState.nodesInScene[scene].push({
-                name,
-                type,
-                script: type === "thumbstick" ? "movement_touch.js" : "action_touch.js"
-            });
-        }
-
-        const matchAttachScript = input.match(/attach script (.+) to (\w+) in (\w+)/i);
-        if (matchAttachScript) {
-            const [, scriptName, nodeName, scene] = matchAttachScript;
-            const nodes = GodotState.nodesInScene[scene] || [];
-            const node = nodes.find(n => n.name === nodeName);
-            if (node) node.script = scriptName;
-        }
     }
 
     updateInfoPanel();
@@ -89,11 +81,74 @@ function processInput(input) {
 }
 
 // ------------------------------
+// Pending Action Handler
+// ------------------------------
+function handlePendingAction(input) {
+    const action = GodotState.pendingAction;
+
+    // ------------------------------
+    // Player creation pipeline
+    // ------------------------------
+    if (action.type === "create_player") {
+
+        if (action.step === "ask_name") {
+            action.playerName = input;
+            action.step = "ask_controller_type";
+
+            addMessage(
+                "system",
+                `How should "${action.playerName}" be controlled?\n` +
+                `• keyboard\n` +
+                `• gamepad\n` +
+                `• touch`
+            );
+            return;
+        }
+
+        if (action.step === "ask_controller_type") {
+            const mode = input.toLowerCase();
+
+            if (!["keyboard", "gamepad", "touch"].includes(mode)) {
+                addMessage("system", "Please choose: keyboard, gamepad, or touch.");
+                return;
+            }
+
+            action.controllerMode = mode;
+
+            // Keyboard / gamepad are immediate
+            if (mode !== "touch") {
+                const controllerName = `${action.playerName}_${mode}`;
+
+                executeProjectCommand(
+                    `add player ${action.playerName} with controller ${controllerName}`
+                );
+
+                GodotState.nodesInScene[GodotState.currentScene].push({
+                    name: action.playerName,
+                    type: "Player",
+                    controller: controllerName
+                });
+
+                GodotState.pendingAction = null;
+                addMessage("system", `Player "${action.playerName}" added.`);
+                return;
+            }
+
+            // Touch controller requires editor
+            action.step = "design_touch_controller";
+            addMessage("system", "Opening touch controller editor. Design controls and press Save.");
+            openTouchEditor();
+            return;
+        }
+    }
+}
+
+// ------------------------------
 function getNextPrompt() {
     if (!GodotState.gameName) return "What is the name of your game?";
-    if (!GodotState.concept) return `Please describe the concept of "${GodotState.gameName}".`;
-    if (!GodotState.currentScene) return "Let's create your first scene. What should it be called?";
-    return `Add nodes, scripts, Android controls, or create another scene in "${GodotState.currentScene}".`;
+    if (!GodotState.concept) return `Describe the concept of "${GodotState.gameName}".`;
+    if (!GodotState.currentScene) return "What should the first scene be called?";
+    return `Add nodes, players, controls, or create another scene.`;
 }
 
 // ------------------------------
