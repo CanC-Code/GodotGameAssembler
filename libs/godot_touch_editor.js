@@ -1,123 +1,111 @@
 // libs/godot_touch_editor.js
 // Author: CCVO
-// Purpose: Touch controller editor + finalization hook
+// Purpose: Touch layout editor with live controller binding
 
-function openTouchEditor() {
-    if (!GodotState.currentScene) {
-        addMessage("system", "No active scene to attach touch controls.");
-        return;
-    }
+let currentControllerFile = null; // stores the JSON name of the controller being edited
+let currentControllerConfig = null; // live config
 
+function openTouchEditor(controllerFile = null) {
     const editor = document.getElementById("touch-editor");
     const canvas = document.getElementById("editor-canvas");
     canvas.innerHTML = "";
 
-    editor.style.display = "block";
+    currentControllerFile = controllerFile;
 
-    GodotState._touchDraft = [];
-}
-
-function createTouchNode(type, name) {
-    const canvas = document.getElementById("editor-canvas");
-
-    const el = document.createElement("div");
-    el.className = "touch-node";
-    el.dataset.type = type;
-    el.dataset.name = name;
-
-    el.style.position = "absolute";
-    el.style.width = "64px";
-    el.style.height = "64px";
-    el.style.left = "20px";
-    el.style.top = "20px";
-    el.style.cursor = "grab";
-    el.style.background =
-        type === "thumbstick"
-            ? "rgba(0,140,255,0.5)"
-            : "rgba(0,255,120,0.5)";
-    el.style.borderRadius = type === "thumbstick" ? "50%" : "8px";
-
-    canvas.appendChild(el);
-    makeDraggable(el, canvas);
-
-    GodotState._touchDraft.push({
-        name,
-        type,
-        element: el
-    });
-}
-
-function makeDraggable(el, container) {
-    let dragging = false;
-    let offsetX = 0;
-    let offsetY = 0;
-
-    el.addEventListener("mousedown", e => {
-        dragging = true;
-        offsetX = e.clientX - el.offsetLeft;
-        offsetY = e.clientY - el.offsetTop;
-    });
-
-    document.addEventListener("mousemove", e => {
-        if (!dragging) return;
-        el.style.left = Math.max(0, Math.min(container.clientWidth - el.clientWidth, e.clientX - offsetX)) + "px";
-        el.style.top = Math.max(0, Math.min(container.clientHeight - el.clientHeight, e.clientY - offsetY)) + "px";
-    });
-
-    document.addEventListener("mouseup", () => dragging = false);
-}
-
-// ------------------------------
-// Save Touch Controller
-// ------------------------------
-document.getElementById("save-editor").addEventListener("click", () => {
-    const action = GodotState.pendingAction;
-    if (!action || action.type !== "create_player") {
-        document.getElementById("touch-editor").style.display = "none";
-        return;
+    if (controllerFile && GodotState.controllers[controllerFile]) {
+        currentControllerConfig = JSON.parse(JSON.stringify(GodotState.controllers[controllerFile]));
+    } else {
+        currentControllerConfig = { nodes: [] };
     }
 
-    const controllerName = `${action.playerName}_touch`;
+    const nodes = currentControllerConfig.nodes || [];
 
-    const controls = GodotState._touchDraft.map(n => ({
-        name: n.name,
-        type: n.type,
-        x: n.element.offsetLeft / document.getElementById("editor-canvas").clientWidth,
-        y: n.element.offsetTop / document.getElementById("editor-canvas").clientHeight
-    }));
+    nodes.forEach(node => {
+        const el = document.createElement("div");
+        el.className = "touch-node";
+        el.dataset.name = node.name;
+        el.style.position = "absolute";
+        el.style.width = "60px";
+        el.style.height = "60px";
+        el.style.background = node.type === "thumbstick" ? "rgba(0,150,255,0.5)" : "rgba(0,255,100,0.5)";
+        el.style.borderRadius = node.type === "thumbstick" ? "50%" : "10%";
+        el.style.cursor = "grab";
 
-    executeProjectCommand(
-        `create touch controller ${controllerName}`
-    );
+        const xPct = node.touchPosition?.x ?? 0.1;
+        const yPct = node.touchPosition?.y ?? 0.8;
+        el.style.left = `${xPct * canvas.clientWidth}px`;
+        el.style.top = `${yPct * canvas.clientHeight}px`;
 
-    controls.forEach(c => {
-        executeProjectCommand(
-            `add ${c.type} ${c.name} to controller ${controllerName} at ${c.x} ${c.y}`
-        );
+        canvas.appendChild(el);
+        makeDraggable(el, canvas, node);
     });
 
-    executeProjectCommand(
-        `add player ${action.playerName} with controller ${controllerName}`
-    );
+    editor.style.display = "block";
+}
 
-    GodotState.nodesInScene[GodotState.currentScene].push({
-        name: action.playerName,
-        type: "Player",
-        controller: controllerName
-    });
+// Live drag update
+function makeDraggable(el, container, node) {
+    let offsetX, offsetY, dragging = false;
 
-    GodotState.pendingAction = null;
-    GodotState._touchDraft = [];
+    function pointerDown(e) {
+        e.preventDefault();
+        dragging = true;
+        const rect = el.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+    }
 
-    document.getElementById("touch-editor").style.display = "none";
-    addMessage("system", `Player "${action.playerName}" created with custom touch controller.`);
-});
+    function pointerMove(e) {
+        if (!dragging) return;
+        let x = e.clientX - container.getBoundingClientRect().left - offsetX;
+        let y = e.clientY - container.getBoundingClientRect().top - offsetY;
 
-// ------------------------------
+        x = Math.max(0, Math.min(container.clientWidth - el.clientWidth, x));
+        y = Math.max(0, Math.min(container.clientHeight - el.clientHeight, y));
+
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+
+        node.touchPosition = {
+            x: x / container.clientWidth,
+            y: y / container.clientHeight
+        };
+
+        // Save live
+        saveControllerConfig();
+    }
+
+    function pointerUp() { dragging = false; }
+
+    el.addEventListener("mousedown", pointerDown);
+    document.addEventListener("mousemove", pointerMove);
+    document.addEventListener("mouseup", pointerUp);
+
+    el.addEventListener("touchstart", e => pointerDown(e.touches[0]));
+    document.addEventListener("touchmove", e => pointerMove(e.touches[0]));
+    document.addEventListener("touchend", pointerUp);
+}
+
+// Save current controller config
+function saveControllerConfig() {
+    if (!currentControllerFile) return;
+    GodotState.controllers[currentControllerFile] = JSON.parse(JSON.stringify(currentControllerConfig));
+    addMessage("system", `Controller "${currentControllerFile}" updated.`);
+}
+
+// Editor Buttons
 document.getElementById("close-editor").addEventListener("click", () => {
     document.getElementById("touch-editor").style.display = "none";
 });
 
-// ------------------------------
+document.getElementById("save-editor").addEventListener("click", () => {
+    if (!currentControllerFile) {
+        const newFile = `controller_custom_${Date.now()}`;
+        currentControllerFile = newFile;
+    }
+    GodotState.controllers[currentControllerFile] = JSON.parse(JSON.stringify(currentControllerConfig));
+    document.getElementById("touch-editor").style.display = "none";
+    addMessage("system", `Controller "${currentControllerFile}" saved.`);
+});
+
 window.openTouchEditor = openTouchEditor;
-window.createTouchNode = createTouchNode;
