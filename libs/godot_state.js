@@ -1,25 +1,14 @@
 // libs/godot_state.js
-// Author: CCVO
-// Purpose: Central mutable state for Godot Game Assembler (human-first)
-
 window.GodotState = {
-    // Project identity
     gameName: null,
     concept: null,
-
-    // Scene tracking
     currentScene: null,
     nodesInScene: {},
+    lastNodeAdded: null,
 
-    // Controller system (NEW)
+    // Controller system
     controllers: {},           // id -> controller object
-    activeController: null,    // currently edited / assigned controller
-
-    // Conversational flow control (NEW)
-    creationContext: null,     // { type, subtype, data, step }
-
-    // UI helpers
-    lastNodeAdded: null
+    activeController: null     // currently edited/assigned
 };
 
 // ------------------------------
