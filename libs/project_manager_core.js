@@ -11,9 +11,12 @@
 
     class ProjectManagerClass {
         constructor() {
+            // Core project structure
             this.graph = new ProjectGraph();
             this.projectName = "";
             this.projectConcept = "";
+
+            // Track created nodes, buttons, scripts, etc.
             this.nodes = {};
             this.buttons = {};
             this.scripts = {};
@@ -21,7 +24,7 @@
         }
 
         // --------------------------------------------------
-        // 🔑 Canonical execution entry point
+        // 🔑 CANONICAL EXECUTION ENTRY POINT
         // --------------------------------------------------
         async execute(command) {
             if (typeof command !== "string") {
@@ -31,6 +34,11 @@
 
             console.log("PM.execute →", command);
             const result = await this.process_nlp_command(command);
+
+            // Live update UI after any mutation
+            renderProjectTree();
+            updateInfoPanel();
+
             return result;
         }
 
@@ -71,25 +79,10 @@
             }
 
             // Create scene
-            if (/^create\s+scene\s+(.+)/i.test(text)) {
-                const sceneName = text.match(/^create\s+scene\s+(.+)/i)[1];
-                const added = this.graph.addScene(sceneName);
-                return added
-                    ? `Scene "${sceneName}" created.`
-                    : `Scene "${sceneName}" already exists.`;
-            }
-
-            // Add node
-            if (/^add\s+node\s+(\w+)\s+(\w+)\s+to\s+(.+)/i.test(text)) {
-                const [, name, type, sceneName] = text.match(
-                    /^add\s+node\s+(\w+)\s+(\w+)\s+to\s+(.+)/i
-                );
-                const scene = this.graph.getScene(sceneName);
-                if (!scene) return `Scene "${sceneName}" does not exist.`;
-
-                scene.nodes ??= {};
-                scene.nodes[name] = { type };
-                return `Node "${name}" (${type}) added to scene "${sceneName}".`;
+            if (/^create\s+scene\s+(\w+)/i.test(text)) {
+                const sceneName = text.match(/^create\s+scene\s+(\w+)/i)[1];
+                const added = this.addScene(sceneName);
+                return added ? `Scene "${sceneName}" created.` : `Scene "${sceneName}" already exists.`;
             }
 
             // List scenes
@@ -98,12 +91,39 @@
                 return scenes.length ? scenes.join(", ") : "No scenes created yet.";
             }
 
-            // Fallback
             return `Unrecognized command. Type "help" for available commands.`;
         }
 
         // --------------------------------------------------
-        // Scene Utilities (used by UI)
+        // Live-mutation helpers
+        // --------------------------------------------------
+        addScene(sceneName) {
+            const added = this.graph.addScene(sceneName);
+            if (added) {
+                renderProjectTree();
+                updateInfoPanel();
+            }
+            return added;
+        }
+
+        addFolder(folderPath) {
+            if (!this.graph.folders[folderPath]) {
+                this.graph.folders[folderPath] = { name: folderPath, files: [], subfolders: [] };
+                renderProjectTree();
+                updateInfoPanel();
+            }
+        }
+
+        addAsset(folderPath, asset) {
+            const folder = this.graph.folders[folderPath] || { name: folderPath, files: [], subfolders: [] };
+            if (!this.graph.folders[folderPath]) this.graph.folders[folderPath] = folder;
+            folder.files.push(asset);
+            renderProjectTree();
+            updateInfoPanel();
+        }
+
+        // --------------------------------------------------
+        // Scene Utilities
         // --------------------------------------------------
         getScenes() {
             return this.graph.getScenes();
@@ -127,11 +147,7 @@
     // --------------------------------------------------
     window.ProjectManager = new ProjectManagerClass();
 
-    // --------------------------------------------------
-    // 🔗 Universal adapter (NLP + UI + buttons)
-    // Async-safe and awaits commands
-    // --------------------------------------------------
-    window.executeProjectCommand = async function (command) {
+    window.executeProjectCommand = function (command) {
         if (!window.ProjectManager || typeof window.ProjectManager.execute !== "function") {
             console.error(
                 "No executable command method found on ProjectManager,",
@@ -139,14 +155,7 @@
             );
             return;
         }
-
-        try {
-            const result = await window.ProjectManager.execute(command);
-            if (result) console.log("PM.result →", result);
-            return result;
-        } catch (err) {
-            console.error("ProjectManager execution error:", err);
-        }
+        return window.ProjectManager.execute(command);
     };
 
     console.log("ProjectManager core initialized.");
